@@ -5,15 +5,15 @@ A responsive Flask + SQLite marketplace starter for rental homes, short stays, s
 ## Included
 
 - Minimal animated welcome screen with just two primary choices: Find a place or List a property. Public search uses compact two-column mobile / three-column desktop cards.
-- Property detail pages, real image uploads, landmarks, stored coordinates, Google Maps directions, interest requests and “report taken” flow.
+- Property detail pages, real image uploads, owner photo removal, listing withdrawal without deleting the enquiry history, landmarks, stored coordinates, Google Maps directions, interest requests and “report taken” flow.
 - Partner accounts for owners, agents, hosts and commercial-property providers; private ID/passport front/back uploads; reusable partner profiles.
 - Configurable category listing charges. A payment reference does **not** itself count as verified payment. An administrator must reconcile it, verify the partner, and separately approve/check the property before it can publish.
 - `Visit my management` button on the partner pages. Admin can connect it under Site & Fees; when no URL is configured, it opens a friendly placeholder page.
-- Admin entry path is hard-coded at `/promise212324`. Admin tools cover listings, payment confirmation, verification, partner accounts, enquiries, taken-listing reports, settings, traffic analytics, and full SQLite download/restore.
+- Admin entry path is hard-coded at `/promise212324`. Admin tools cover listings, payment confirmation, verification, partner accounts, enquiries, taken-listing reports, category visibility controls, settings, traffic analytics, and full SQLite download/restore.
 - Explicit opt-in device location for nearby sorting. Only approximate coordinates rounded to three decimal places are stored for visitor analytics; no IP addresses are stored. Browsers do not reveal a phone number automatically: deduplication uses the browser key, and a provided/registered phone or account can reconcile visits across browsers.
-- Platform and property QR codes, configurable public logo (including favicon/PWA branding), manifest, installable PWA shell with cache version refresh, offline fallback warning, dynamic sitemap and robots.txt. The landing counter gently animates to the recorded unique browser/account/voluntarily provided phone total; it does not fabricate visitors.
+- Platform and property QR codes, configurable public logo (including favicon/PWA branding), manifest, installable PWA shell with cache version refresh, offline fallback warning, dynamic sitemap and robots.txt. The welcome screen deliberately has no property cards or visit counter.
 - Optional campaign placement inside search results, managed from Site & Fees: image, short message, destination link, or a safely embedded public YouTube/Vimeo video. It never turns the two-choice welcome screen into a pop-up.
-- Compact source-linked market discovery cards appear before the search form, so Find a Place is populated immediately. The initial database seeds a rotating mix of public property ads with original-source links; a small social-profile strip gives direct entry to public TikTok, Instagram and Facebook property posts. Admin can add, edit, disable, refresh or delete source cards under Market discoveries.
+- Compact source-linked market discovery cards appear before the search form inside Find a Place, so browsing is populated immediately after the seeker chooses that gate. The initial database seeds a rotating mix of public property ads with original-source links; a small social-profile strip gives direct entry to public TikTok, Instagram and Facebook property posts. Admin can add, edit, disable, refresh or delete source cards under Market discoveries, and hide or reveal categories in Site settings.
 - Typo-tolerant search fallback for likely spelling mistakes, budget widening, optional GPS-nearby sorting, in-page route preview and turn-by-turn Google Maps directions from current location or a typed landmark.
 - SQLite snapshot backups, daily automatic snapshots (14 retained), manual backup creation, download, and validated restore with a safety backup first.
 
@@ -69,7 +69,7 @@ The Blueprint mounts a persistent disk at `/var/data`. The app uses this path au
 
 ## Important production notes / limitations
 
-- Social account buttons are optional and administrator-configurable. The public homepage intentionally keeps only the two main entry choices; the Find a Place screen has a rotating source shelf and direct links to public property profiles on social platforms.
+- Social account buttons are optional and administrator-configurable. The welcome page contains only the site name, the two entry choices, an optional share QR code and the copyright line, with a brief entrance animation. Property previews and searches begin only after choosing Find a place.
 - External market cards are curated starter links to public property ads, not PataMahali-verified listings. The site does not silently scrape TikTok, Instagram or Facebook (public-profile scraping is unreliable and may violate platform terms). Admin can add a specific public post URL and image link to the Market discoveries screen. Update the source-check date after reviewing each listing; always ask the source advertiser to confirm availability.
 
 - **Payment verification is manual in this release.** The system records the M-Pesa/payment reference and an admin action. Automatic Safaricom M-Pesa verification requires your own Daraja app credentials, callback URL and testing; no payment is represented as verified without an admin confirmation.

@@ -1,58 +1,23 @@
 {% extends 'base.html' %}
-{% block title %}{{ site_settings.get('site_name','PataMahali') }} · Find the right place{% endblock %}
-{% block meta_description %}{{ site_settings.get('site_description','Explore homes, stays and commercial properties with clear details and accountable listings.') }}{% endblock %}
-{% block head %}<meta name="robots" content="index,follow"><meta property="og:title" content="{{ site_settings.get('site_name','PataMahali')|e }}"><meta property="og:description" content="{{ site_settings.get('tagline','Find the right place.')|e }}">{% endblock %}
+{% block title %}{{ site_settings.get('site_name','PataMahali') }}{% endblock %}
+{% block meta_description %}{{ site_settings.get('site_description','Find a place or list a property.') }}{% endblock %}
+{% block head %}<meta name="robots" content="index,follow"><meta property="og:title" content="{{ site_settings.get('site_name','PataMahali')|e }}"><meta property="og:description" content="Find a place or list a property.">{% endblock %}
 {% block content %}
-<section class="entry-page" aria-labelledby="entry-title">
-  <div class="entry-atmosphere entry-atmosphere-a" aria-hidden="true"></div><div class="entry-atmosphere entry-atmosphere-b" aria-hidden="true"></div>
-  <div class="entry-content">
-    <a class="entry-brand" href="{{ url_for('index') }}" aria-label="{{ site_settings.get('site_name','PataMahali') }} home">
-      <span class="entry-brand-mark">{% if site_settings.get('site_logo') %}<img src="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}" alt="" width="42" height="42">{% else %}<img src="{{ url_for('icon_svg') }}" alt="" width="42" height="42">{% endif %}</span>
-      <span>{{ site_settings.get('site_name','PataMahali') }}</span>
+<section class="entry-minimal" aria-label="Welcome to {{ site_settings.get('site_name','PataMahali') }}">
+  <div class="entry-glow entry-glow-one" aria-hidden="true"></div>
+  <div class="entry-glow entry-glow-two" aria-hidden="true"></div>
+  <div class="entry-minimal-inner">
+    <div class="entry-minimal-brand">{{ site_settings.get('site_name','PataMahali') }}</div>
+    <nav class="entry-minimal-choices" aria-label="Choose where to go">
+      <a class="entry-minimal-choice entry-choice-finder" href="{{ url_for('homes') }}"><span>Find a place</span><span class="entry-choice-arrow" aria-hidden="true">↗</span></a>
+      <a class="entry-minimal-choice entry-choice-owner" href="{% if current_user and current_user['role'] in ['owner','agent','host','business'] %}{{ url_for('partner_dashboard') }}{% else %}{{ url_for('partner_register') }}{% endif %}"><span>List a property</span><span class="entry-choice-arrow" aria-hidden="true">↗</span></a>
+    </nav>
+    {% if site_settings.get('show_landing_qr_enabled','1') == '1' %}
+    <a class="entry-minimal-qr" href="{{ url_for('qr_platform') }}" target="_blank" rel="noopener noreferrer" aria-label="Open a scannable QR code to share {{ site_settings.get('site_name','PataMahali') }}">
+      <img src="{{ url_for('qr_platform') }}" alt="QR code to open {{ site_settings.get('site_name','PataMahali') }}" width="76" height="76">
+      <span>Scan to share</span>
     </a>
-    <div class="entry-intro"><span class="entry-kicker">A clearer way to find your place</span><h1 id="entry-title">Welcome to <span>{{ site_settings.get('site_name','PataMahali') }}</span></h1><p>{{ site_settings.get('tagline','Find the right place, with confidence.') }}</p></div>
-    <div class="entry-gates">
-      <a class="entry-gate gate-seeker" href="{{ url_for('homes') }}" aria-label="Find a place and explore listings">
-        <span class="gate-number">01 <span>EXPLORE</span></span>
-        <span class="gate-symbol gate-photo" aria-hidden="true"><img src="https://images.kenyapropertycentre.com/properties/images/69237/06ac7cebd65b87-2-bedroom-apartment-for-rent-westlands-nairobi.webp" alt="" loading="lazy"></span>
-        <span class="gate-copy"><strong>Find a place</strong><small>Homes, stays, shops and spaces.</small></span><span class="gate-arrow" aria-hidden="true">↗</span>
-      </a>
-      <a class="entry-gate gate-owner" href="{% if current_user and current_user['role'] in ['owner','agent','host','business'] %}{{ url_for('partner_dashboard') }}{% else %}{{ url_for('partner_register') }}{% endif %}" aria-label="List a property as an owner or agent">
-        <span class="gate-number">02 <span>FOR PROPERTY PARTNERS</span></span>
-        <span class="gate-symbol gate-photo owner-symbol" aria-hidden="true"><img src="https://images.kenyapropertycentre.com/properties/images/69179/06ac663af27d1c-3-bedroom-apartment-all-ensuite-for-rent-westlands-nairobi.webp" alt="" loading="lazy"></span>
-        <span class="gate-copy"><strong>List a property</strong><small>For owners and authorized agents.</small></span><span class="gate-arrow" aria-hidden="true">↗</span>
-      </a>
-    </div>
-    {% if listings or market_items %}
-    <section class="entry-available" aria-labelledby="available-title">
-      <div class="entry-available-heading"><div><span class="entry-kicker">A few places to start with</span><h2 id="available-title">Homes worth a look</h2><p>Browse a few places before setting your filters.</p></div><a class="entry-browse-all" href="{{ url_for('homes') }}">Find a place <span aria-hidden="true">→</span></a></div>
-      <div class="entry-mini-grid">
-        {% for item in listings[:2] %}
-        <a class="entry-mini-card" href="{{ url_for('listing_detail', listing_id=item['id']) }}">
-          <span class="entry-mini-photo">{% set imgs = listing_images(item) %}{% if imgs %}<img src="{{ url_for('listing_media', filename=imgs[0]) }}" alt="{{ item['title'] }}" loading="lazy">{% else %}<img src="https://images.kenyapropertycentre.com/properties/images/69237/06ac7cebd65b87-2-bedroom-apartment-for-rent-westlands-nairobi.webp" alt="Property preview" loading="lazy">{% endif %}<span class="entry-mini-status"><i></i> On PataMahali</span></span>
-          <span class="entry-mini-copy"><strong>{{ item['title'] }}</strong><span>{{ item['location_name'] }}</span><b>{{ money(item['price_amount']) }} <small>{{ item['price_period'] }}</small></b></span>
-        </a>
-        {% endfor %}
-        {% for item in market_items[:(4 - (listings[:2]|length))] %}
-        <a class="entry-mini-card market-mini-card" href="{{ item['source_url'] }}" target="_blank" rel="noopener noreferrer">
-          <span class="entry-mini-photo">{% if item['image_url'] %}<img src="{{ item['image_url'] }}" alt="{{ item['title'] }}" loading="lazy">{% else %}<span class="market-photo-fallback" aria-hidden="true">⌂</span>{% endif %}<span class="entry-mini-status market-source-pill">External listing</span></span>
-          <span class="entry-mini-copy"><strong>{{ item['title'] }}</strong><span>{{ item['location_name'] }} · {{ item['source_name'] }}</span><b>{% if item['price_amount'] %}{{ money(item['price_amount']) }} <small>{{ item['price_period'] }}</small>{% else %}Check price on source{% endif %}</b></span>
-        </a>
-        {% endfor %}
-      </div>
-      {% if market_items %}<p class="market-disclaimer">External adverts are shown for discovery, not verified by {{ site_settings.get('site_name','PataMahali') }}. Confirm current availability with the original advertiser.</p>{% endif %}
-    </section>
     {% endif %}
-    <div class="entry-bottom-row">
-      {% if site_settings.get('show_visitor_counter_enabled','1') == '1' %}<div class="entry-reach"><span class="reach-dot" aria-hidden="true"></span><strong data-count-up="{{ visitor_count|int }}">{{ visitor_count|int }}</strong><span>unique browsers reached</span></div>{% endif %}
-      {% if site_settings.get('show_landing_qr_enabled','1') == '1' %}<div class="entry-invite-card"><img src="{{ url_for('qr_platform') }}" alt="QR code to open {{ site_settings.get('site_name','PataMahali') }}" width="72" height="72"><div><strong>Invite someone</strong><span>Scan to open this marketplace.</span><button type="button" class="entry-copy-link" data-copy-url="{{ invite_url }}">Copy invite link</button></div></div>{% endif %}
-    </div>
   </div>
 </section>
-<script>
-(() => {
- const counter=document.querySelector('[data-count-up]');
- if(counter){const target=Math.max(0,Number(counter.dataset.countUp)||0);const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;if(!reduce&&target>0){const start=performance.now(),duration=900;function tick(now){const p=Math.min(1,(now-start)/duration);counter.textContent=Math.round(target*(1-Math.pow(1-p,3))).toLocaleString();if(p<1)requestAnimationFrame(tick)}counter.textContent='0';requestAnimationFrame(tick)}}
-})();
-</script>
 {% endblock %}

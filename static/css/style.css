@@ -686,3 +686,46 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
  .dock-home{display:grid;place-items:center;width:48px;height:48px;margin-top:-15px;border:4px solid #fff;border-radius:17px;background:linear-gradient(145deg,#294f83,#456b9e);color:#fff;box-shadow:0 5px 15px rgba(35,66,111,.27)}
  .dock-home span{font-size:1.55rem;line-height:1}
 }
+
+
+/* Minimal, animated two-choice welcome screen. No property cards belong here. */
+body.landing-body{display:flex;flex-direction:column;min-height:100vh;background:#f7f9f6}
+body.landing-body #main-content{display:flex;flex:1;min-height:0}
+body.landing-body .site-footer{width:100%;margin-top:0;padding:12px 20px 18px;background:transparent;color:#68756c}
+body.landing-body .footer-bottom{justify-content:center;margin:0;border-top:0;padding:0;font-size:.76rem;color:#778078;text-align:center}
+.entry-minimal{position:relative;isolation:isolate;display:grid;place-items:center;overflow:hidden;width:100%;min-height:calc(100vh - 56px);padding:44px 22px;background:radial-gradient(ellipse at 18% 20%,rgba(212,232,207,.65),transparent 36%),radial-gradient(ellipse at 85% 80%,rgba(224,236,222,.75),transparent 35%),#f7f9f6}
+.entry-minimal-inner{position:relative;z-index:1;display:flex;align-items:center;flex-direction:column;width:min(720px,100%);animation:entry-arrive .7s cubic-bezier(.2,.7,.2,1) both}
+.entry-minimal-brand{margin-bottom:clamp(35px,8vh,74px);font-family:'Manrope','DM Sans',sans-serif;font-size:clamp(2rem,5.2vw,3.5rem);font-weight:800;letter-spacing:-.065em;line-height:1.08;color:#173c29;text-align:center}
+.entry-minimal-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;width:100%;animation:entry-choices-in .55s .18s ease both}
+.entry-minimal-choice{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:88px;padding:22px 23px;border:1px solid #dce7db;border-radius:17px;background:rgba(255,255,255,.93);box-shadow:0 9px 27px rgba(35,64,42,.055);font-size:1.08rem;font-weight:800;color:#203a2b;transition:transform .2s ease,border-color .2s ease,background .2s ease,box-shadow .2s ease}
+.entry-choice-owner{background:#edf6eb;border-color:#d4e5d1}
+.entry-minimal-choice:hover{transform:translateY(-3px);border-color:#9fbea0;background:#fff;box-shadow:0 14px 33px rgba(35,64,42,.1)}
+.entry-minimal-choice:focus-visible{outline:3px solid #77a77b;outline-offset:4px}
+.entry-choice-arrow{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border:1px solid #dbe5dc;border-radius:50%;font-size:1rem;color:#2e6840;background:#fff}
+.entry-minimal-qr{display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:clamp(30px,6vh,50px);color:#718075;font-size:.73rem;text-decoration:none;animation:entry-choices-in .6s .35s ease both}
+.entry-minimal-qr img{display:block;width:72px;height:72px;border:5px solid #fff;border-radius:9px;box-shadow:0 4px 16px rgba(25,55,35,.1)}
+.entry-glow{position:absolute;z-index:-1;border-radius:50%;pointer-events:none;filter:blur(1px);animation:entry-drift 9s ease-in-out infinite alternate}
+.entry-glow-one{width:220px;height:220px;left:-95px;top:12%;background:rgba(203,227,197,.22)}
+.entry-glow-two{width:270px;height:270px;right:-115px;bottom:4%;background:rgba(214,231,209,.25);animation-delay:-4s}
+@keyframes entry-arrive{from{opacity:0;transform:translateY(9px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes entry-choices-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes entry-drift{from{transform:translate3d(0,-7px,0)}to{transform:translate3d(0,12px,0)}}
+@media(max-width:640px){.entry-minimal{min-height:calc(100svh - 48px);padding:32px 19px}.entry-minimal-brand{margin-bottom:clamp(42px,10vh,74px);font-size:clamp(2.15rem,10vw,3rem)}.entry-minimal-choices{grid-template-columns:1fr;gap:11px}.entry-minimal-choice{min-height:76px;padding:19px 20px;font-size:1rem;border-radius:15px}.entry-minimal-qr{margin-top:clamp(28px,6vh,44px)}.entry-minimal-qr img{width:68px;height:68px}}
+@media(prefers-reduced-motion:reduce){.entry-minimal-inner,.entry-minimal-choices,.entry-minimal-qr,.entry-glow{animation:none!important}.entry-minimal-choice{transition:none}}
+
+/* Property cards: put the upfront rent/price in a clear pale-green strip. */
+.property-card-body{padding:0!important}
+.listing-price-band{display:flex;align-items:baseline;gap:8px;min-height:54px;padding:12px 15px;background:#e7f4e5;border-bottom:1px solid #d7e9d4;color:#225a32;font-variant-numeric:tabular-nums}
+.listing-price-band strong{font-family:'Manrope','DM Sans',sans-serif;font-size:1.18rem;line-height:1.2;font-weight:800;letter-spacing:-.025em;color:#225a32}
+.listing-price-band span{font-size:.76rem;line-height:1.3;font-weight:600;color:#52765a}
+.property-card-copy{padding:12px 15px 14px}
+.property-card .property-title{margin:0 0 7px;font-size:.98rem;line-height:1.35}
+.property-card .property-location{margin-top:2px}
+.property-card .property-tags{margin:10px 0 12px}
+@media(max-width:420px){.listing-price-band{min-height:49px;padding:10px 12px}.listing-price-band strong{font-size:1.05rem}.listing-price-band span{font-size:.7rem}.property-card-copy{padding:10px 12px 12px}.property-card .property-title{font-size:.92rem}}
+
+.current-photos-grid{display:flex;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-top:8px}
+.current-photo-item{display:grid;gap:6px;width:128px;padding:7px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.current-photo-item img{width:100%;height:82px;object-fit:cover;border-radius:6px}
+.current-photo-item span{display:flex;align-items:center;gap:5px;font-size:.73rem;color:#8b302d}
+.current-photo-item input{width:15px;height:15px;accent-color:#a63a35}

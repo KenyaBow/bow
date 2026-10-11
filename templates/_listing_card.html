@@ -1,15 +1,17 @@
 <article class="property-card">
-  <a class="property-image" href="{{ url_for('listing_detail', listing_id=item['id']) }}">
+  <a class="property-image" href="{{ url_for('listing_detail', listing_id=item['id']) }}" aria-label="View {{ item['title'] }}">
     {% set imgs = listing_images(item) %}
-    {% if imgs %}<img loading="lazy" src="{{ url_for('listing_media', filename=imgs[0]) }}" alt="{{ item['title'] }} property photo">{% else %}<div class="image-placeholder"><span>Place photo</span></div>{% endif %}
-    {% if item['featured_until'] and item['featured_until'] > '' %}<span class="photo-chip">{{ 'Featured' if item['featured_until'] > '' else '' }}</span>{% endif %}
+    {% if imgs %}<img loading="lazy" src="{{ url_for('listing_media', filename=imgs[0]) }}" alt="{{ item['title'] }} property photo">{% else %}<div class="image-placeholder"><span>Photo unavailable</span></div>{% endif %}
+    {% if item['featured_until'] and item['featured_until'] > '' %}<span class="photo-chip">Featured</span>{% endif %}
   </a>
   <div class="property-card-body">
-    <div class="card-price">{{ money(item['price_amount']) }} <span>{{ item['price_period'] }}</span></div>
-    <a class="property-title" href="{{ url_for('listing_detail', listing_id=item['id']) }}">{{ item['title'] }}</a>
-    {% if item['rating_count'] %}<div class="listing-rating" aria-label="Rated {{ item['rating_average'] }} out of 5"><span class="rating-star" aria-hidden="true">★</span>{{ item['rating_average'] }} <span class="muted small">({{ item['rating_count'] }})</span></div>{% endif %}
-    <div class="property-location"><span aria-hidden="true">⌖</span> {{ item['location_name'] }}</div>
-    <div class="property-tags"><span class="verified-tag">✓ Property checked</span>{% if item['bedrooms'] %}<span>{{ item['bedrooms'] }} bed</span>{% endif %}{% if item['floor_area'] %}<span>{{ item['floor_area'] }}</span>{% endif %}</div>
-    <div class="card-footer"><span class="muted small">{{ item['property_type'] }}</span><a class="text-link" href="{{ url_for('listing_detail', listing_id=item['id']) }}">View details <span aria-hidden="true">→</span></a></div>
+    <div class="listing-price-band"><strong>{{ money(item['price_amount']) }}</strong><span>{{ item['price_period'] }}</span></div>
+    <div class="property-card-copy">
+      <a class="property-title" href="{{ url_for('listing_detail', listing_id=item['id']) }}">{{ item['title'] }}</a>
+      {% if item['rating_count'] %}<div class="listing-rating" aria-label="Rated {{ item['rating_average'] }} out of 5"><span class="rating-star" aria-hidden="true">★</span>{{ item['rating_average'] }} <span class="muted small">({{ item['rating_count'] }})</span></div>{% endif %}
+      <div class="property-location"><span aria-hidden="true">⌖</span> {{ item['location_name'] }}</div>
+      <div class="property-tags">{% if item['property_verified'] %}<span class="verified-tag">Property checked</span>{% endif %}{% if item['bedrooms'] %}<span>{{ item['bedrooms'] }} bed</span>{% endif %}{% if item['bathrooms'] %}<span>{{ item['bathrooms'] }} bath</span>{% endif %}{% if item['floor_area'] %}<span>{{ item['floor_area'] }}</span>{% endif %}</div>
+      <div class="card-footer"><span class="muted small">{{ item['property_type'] }}</span><a class="text-link" href="{{ url_for('listing_detail', listing_id=item['id']) }}">View details <span aria-hidden="true">→</span></a></div>
+    </div>
   </div>
 </article>

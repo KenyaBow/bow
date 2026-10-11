@@ -15,8 +15,8 @@
   <style>:root{--brand:{{ site_settings.get('brand_primary','#283A62') }};--accent:{{ site_settings.get('brand_accent','#C88A62') }};}</style>
   {% block head %}{% endblock %}
 </head>
-<body>
-  <div class="offline-banner" id="offlineBanner" hidden>You are offline. Saved details may be out of date. Confirm availability when connected.</div>
+<body class="{{ 'landing-body' if request.endpoint == 'index' else '' }}">
+  {% if request.endpoint != 'index' %}<div class="offline-banner" id="offlineBanner" hidden>You are offline. Saved details may be out of date. Confirm availability when connected.</div>{% endif %}
   {% if request.endpoint != 'index' %}
   <header class="site-header">
     <a class="brand" href="{{ url_for('index') }}" aria-label="{{ site_settings.get('site_name','PataMahali') }} home">
@@ -39,9 +39,11 @@
   </header>
   {% endif %}
   <main id="main-content">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}<div class="flash-stack page-shell">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
-    {% endwith %}
+    {% if request.endpoint != 'index' %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack page-shell">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
+      {% endwith %}
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="site-footer">
@@ -52,11 +54,13 @@
       <div class="footer-contact">{% if site_settings.get('support_phone') %}<p>Site support: <a href="https://wa.me/{{ site_settings.get('support_phone','')|replace('+','')|replace(' ','')|replace('-','')|replace('(','')|replace(')','') }}" target="_blank" rel="noopener noreferrer">WhatsApp</a></p>{% endif %}{% if site_settings.get('support_email') %}<p><a href="mailto:{{ site_settings.get('support_email') }}">{{ site_settings.get('support_email') }}</a></p>{% endif %}<button type="button" class="button button-small button-outline" data-install-pwa hidden>Install app</button></div>
     </div>
     {% endif %}
+    {% if request.endpoint != 'index' %}
     <div class="footer-socials" aria-label="Official social accounts">
       {% for social_key, social_label in [('instagram','Instagram'),('facebook','Facebook'),('tiktok','TikTok'),('youtube','YouTube'),('linkedin','LinkedIn'),('x','X')] %}
         {% if site_settings.get('social_' ~ social_key ~ '_enabled') == '1' and site_settings.get('social_' ~ social_key ~ '_url') %}<a href="{{ site_settings.get('social_' ~ social_key ~ '_url') }}" target="_blank" rel="noopener noreferrer">{{ social_label }}</a>{% endif %}
       {% endfor %}
     </div>
+    {% endif %}
     <div class="footer-bottom"><span>© {{ current_year }} {{ site_settings.get('site_name','PataMahali') }}. All rights reserved.</span>{% if request.endpoint != 'index' %}<span>Property availability reflects the latest recorded confirmation.</span>{% endif %}</div>
   </footer>
   <script>window.APP_CSRF={{ session.get('csrf_token','')|tojson }};</script>

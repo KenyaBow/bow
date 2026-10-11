@@ -95,6 +95,12 @@ DEFAULT_SETTINGS = {
     "show_landing_qr_enabled": "1",
     "show_visitor_counter_enabled": "1",
     "show_partner_directory_enabled": "1",
+    "category_enabled_residential": "1",
+    "category_enabled_short_stay": "1",
+    "category_enabled_commercial": "1",
+    "category_enabled_industrial": "1",
+    "category_enabled_land_sale": "1",
+    "category_enabled_property_sale": "1",
     "market_discoveries_enabled": "1",
     "promo_enabled": "0",
     "promo_title": "",
@@ -438,6 +444,12 @@ def close_db(_error=None):
 def setting(key: str, default: str = "") -> str:
     row = get_db().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
+
+
+def visible_categories() -> dict[str, dict]:
+    """Categories currently enabled for public discovery by the administrator."""
+    return {key: meta for key, meta in CATEGORY_META.items()
+            if setting(f"category_enabled_{key}", "1") == "1"}
 
 
 def set_setting(key: str, value: str) -> None:
@@ -854,6 +866,7 @@ def market_discoveries(limit: int = 8, category: str = "", query: str = "", loca
     if setting("market_discoveries_enabled", "1") != "1":
         return []
     rows = list(get_db().execute("SELECT * FROM market_discoveries WHERE enabled=1 ORDER BY display_order,id"))
+    rows = [row for row in rows if setting(f"category_enabled_{row['category']}", "1") == "1"]
     if category in CATEGORY_META:
         rows = [row for row in rows if row["category"] == category]
     search_text = " ".join(value for value in (query, location) if value).strip()
@@ -878,17 +891,9 @@ def market_discoveries(limit: int = 8, category: str = "", query: str = "", loca
 
 @app.route("/")
 def index():
-    rows = list(public_listings(limit=24))
-    # Rotate the homepage selection every four hours so returning visitors see a
-    # changing shelf, while all entries still pass the normal publication checks.
-    if rows:
-        bucket = int(datetime.now(timezone.utc).timestamp() // (4 * 60 * 60))
-        offset = bucket % len(rows)
-        rows = (rows[offset:] + rows[:offset])[:12]
-    counts = {key: get_db().execute("SELECT COUNT(*) FROM listings l JOIN users u ON u.id=l.owner_id WHERE l.category=? AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 AND l.last_confirmed_at>=? AND u.verified=1 AND u.suspended=0", (key, freshness_threshold())).fetchone()[0] for key in CATEGORY_META}
-    partners = get_db().execute("SELECT u.id,u.full_name,u.business_name,u.role,COUNT(l.id) AS listing_count FROM users u LEFT JOIN listings l ON l.owner_id=u.id AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 WHERE u.role IN ('owner','agent','host','business') AND u.verified=1 AND u.suspended=0 GROUP BY u.id ORDER BY listing_count DESC,u.full_name LIMIT 6").fetchall()
-    visitor_count = get_db().execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator'").fetchone()[0]
-    return render_template("index.html", listings=rows, market_items=market_discoveries(4), counts=counts, partners=partners, visitor_count=visitor_count, invite_url=public_base() + "/")
+    # The welcome page is intentionally a minimal two-choice gateway. Listings,
+    # prices and search tools belong only inside the finder experience.
+    return render_template("index.html", invite_url=public_base() + "/")
 
 
 def _search_tokens(value: str) -> list[str]:
@@ -941,9 +946,20 @@ def homes():
     min_price = request.args.get("min_price", "").strip()
     max_price = request.args.get("max_price", "").strip()
     min_beds = request.args.get("bedrooms", "").strip()
+    category_meta = visible_categories()
+    if category in CATEGORY_META and category not in category_meta:
+        category = ""
+        property_type = ""
     base_clauses, base_params = [], []
-    if category in CATEGORY_META:
+    if category in category_meta:
         base_clauses.append("l.category=?"); base_params.append(category)
+    else:
+        active_keys = list(category_meta)
+        if active_keys:
+            base_clauses.append("l.category IN (" + ",".join("?" for _ in active_keys) + ")")
+            base_params.extend(active_keys)
+        else:
+            base_clauses.append("1=0")
     if property_type:
         base_clauses.append("l.property_type=?"); base_params.append(property_type)
     if min_price:
@@ -966,7 +982,10 @@ def homes():
                 base_clauses.extend(["l.price_amount>=?", "l.price_amount<=?"])
                 # Preserve all non-price values by reconstructing from filters above.
                 base_params = []
-                if category in CATEGORY_META: base_params.append(category)
+                if category in category_meta:
+                    base_params.append(category)
+                else:
+                    base_params.extend(list(category_meta))
                 if property_type: base_params.append(property_type)
                 base_params.extend([float(min_price), float(max_price)])
         except ValueError:
@@ -1020,6 +1039,7 @@ def homes():
         types=CATEGORY_META.get(category, {}).get("types", []),
         sorted_by_distance=bool(user_lat and user_lon), fuzzy_used=fuzzy_used,
         market_items=market_discoveries(4, category=category, query=q, location=location),
+        category_meta=category_meta,
     )
 
 @app.route("/listing/<int:listing_id>")
@@ -1408,7 +1428,9 @@ def partner_edit_listing(listing_id):
         if not title or not property_type or not location_name or price_amount < 0:
             flash("Property name, type, location and price are required.", "error")
             return redirect(url_for("partner_edit_listing", listing_id=listing_id))
-        names = listing_images(row)
+        original_names = listing_images(row)
+        remove_names = set(request.form.getlist("remove_images"))
+        names = [name for name in original_names if name not in remove_names]
         try:
             additions = []
             for file in request.files.getlist("images")[:8]:
@@ -1433,6 +1455,18 @@ def partner_edit_listing(listing_id):
         # Any substantive edit puts the property back into the review queue.
         get_db().execute("""UPDATE listings SET category=?,property_type=?,title=?,description=?,price_amount=?,price_period=?,deposit_amount=?,bedrooms=?,bathrooms=?,floor_area=?,amenities=?,water_quality=?,location_name=?,landmarks=?,latitude=?,longitude=?,property_condition=?,images=?,status='pending',approval_status='pending',payment_status=?,payment_reference=?,fee_amount=?,property_verified=0,last_confirmed_at='',updated_at=? WHERE id=? AND owner_id=?""",
             (category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, request.form.get("floor_area", "").strip()[:80], request.form.get("amenities", "").strip()[:1200], water_quality, location_name, landmarks, latitude, longitude, condition, json.dumps(names), payment_status, payment_reference, fee, now_iso(), listing_id, user["id"]))
+        # Remove deleted photo files only if no other listing references them.
+        if remove_names:
+            other_rows = get_db().execute("SELECT images FROM listings WHERE id<>?", (listing_id,)).fetchall()
+            referenced = set()
+            for other in other_rows:
+                try:
+                    referenced.update(json.loads(other["images"] or "[]"))
+                except (TypeError, json.JSONDecodeError):
+                    pass
+            for filename in remove_names - referenced:
+                if filename in original_names and Path(filename).name == filename:
+                    (LISTING_UPLOAD_DIR / filename).unlink(missing_ok=True)
         audit("partner_edited_property", "listing", listing_id, "Listing returned to verification queue after edit")
         flash("Listing updated and returned to review. It stays private until the property is checked again. If its category changed, the new fee must be paid.", "success")
         return redirect(url_for("partner_dashboard"))
@@ -1462,6 +1496,19 @@ def partner_confirm_availability(listing_id):
             flash("Availability confirmation recorded.", "success")
         else:
             flash("This property is not yet approved for publication.", "warning")
+    return redirect(url_for("partner_dashboard"))
+
+
+@app.route("/partner/listings/<int:listing_id>/withdraw", methods=["POST"])
+@partner_required
+def partner_withdraw_listing(listing_id):
+    user = get_current_user()
+    row = get_db().execute("SELECT id,title,status FROM listings WHERE id=? AND owner_id=?", (listing_id, user["id"])).fetchone()
+    if not row:
+        abort(404)
+    get_db().execute("UPDATE listings SET status='removed',approval_status='removed',updated_at=? WHERE id=? AND owner_id=?", (now_iso(), listing_id, user["id"]))
+    audit("partner_withdrew_property", "listing", listing_id, "Owner withdrew listing from public search; record retained")
+    flash("This property has been withdrawn from public search. Its record and enquiry history have been kept.", "success")
     return redirect(url_for("partner_dashboard"))
 
 
