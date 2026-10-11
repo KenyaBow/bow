@@ -3,6 +3,31 @@
 {% block meta_description %}Search houses, stays and commercial property by location, type and realistic budget.{% endblock %}
 {% block content %}
 <section class="page-shell search-page-intro"><div><span class="eyebrow">Discover</span><h1>Find a place that fits.</h1><p>Real details. Clear prices. Better directions.</p></div><span class="search-result-count">{{ listings|length }} match{{ '' if listings|length==1 else 'es' }}</span></section>
+{% if market_items %}
+<section class="page-shell market-discovery-section" aria-labelledby="market-discovery-title">
+  <div class="market-discovery-heading"><div><span class="eyebrow">A wider look</span><h2 id="market-discovery-title">Places already on the market</h2><p>Browse first, then narrow down by area and budget.</p></div><span class="market-rotation-label">Rotating selection</span></div>
+  <div class="market-discovery-grid">
+    {% for item in market_items[:6] %}
+    <article class="market-discovery-card">
+      <a class="market-image-link" href="{{ item['source_url'] }}" target="_blank" rel="noopener noreferrer" aria-label="Open {{ item['title'] }} at {{ item['source_name'] }}">
+        {% if item['image_url'] %}<img src="{{ item['image_url'] }}" alt="{{ item['title'] }}" loading="lazy">{% else %}<span class="market-photo-fallback" aria-hidden="true">⌂</span>{% endif %}
+        <span class="market-external-label">External listing</span>
+      </a>
+      <div class="market-discovery-copy">
+        <div class="market-card-meta"><span>{{ item['property_type'] }}</span>{% if item['bedrooms'] %}<span>{{ item['bedrooms'] }} bed</span>{% endif %}</div>
+        <h3><a href="{{ item['source_url'] }}" target="_blank" rel="noopener noreferrer">{{ item['title'] }}</a></h3>
+        <p class="market-card-location">{{ item['location_name'] }}</p>
+        <div class="market-card-price">{% if item['price_amount'] %}<strong>{{ money(item['price_amount']) }}</strong><span>{{ item['price_period'] }}</span>{% else %}<strong>Check source</strong>{% endif %}</div>
+        <p class="market-card-summary">{{ item['summary'] }}</p>
+        <div class="market-card-foot"><span>{{ item['source_name'] }} · checked {{ item['source_checked_at'] }}</span><div class="market-card-links"><a href="{{ item['source_url'] }}" target="_blank" rel="noopener noreferrer">View original <span aria-hidden="true">↗</span></a>{% if item['social_url'] %}<a href="{{ item['social_url'] }}" target="_blank" rel="noopener noreferrer">Watch post ↗</a>{% endif %}</div></div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  <p class="market-disclaimer">These adverts come from public third-party sources. Prices and availability can change; always confirm on the original page before travelling or paying.</p>
+</section>
+{% endif %}
+
 <section class="page-shell search-command-panel">
   <form action="{{ url_for('homes') }}" method="get" class="search-command-form" id="houseSearchForm">
     <label class="search-field search-wide">House, place or feature<input type="search" name="q" value="{{ q }}" placeholder="e.g. 2 bedroom, balcony, near a stage" autocomplete="off"></label>
@@ -22,6 +47,10 @@
   </div>
 </section>
 {% endif %}
+<section class="page-shell social-discovery-strip" aria-label="More property tours on social media">
+  <div><span class="eyebrow">More to explore</span><strong>Property tours from public social profiles</strong><small>Open a profile to browse its latest posts.</small></div>
+  <div class="social-discovery-links"><a href="https://www.tiktok.com/@houseshomeskenya" target="_blank" rel="noopener noreferrer">TikTok <span aria-hidden="true">↗</span></a><a href="https://www.instagram.com/houses_homes_kenya" target="_blank" rel="noopener noreferrer">Instagram <span aria-hidden="true">↗</span></a><a href="https://www.facebook.com/ApartmentsForSaleAndRent" target="_blank" rel="noopener noreferrer">Facebook <span aria-hidden="true">↗</span></a></div>
+</section>
 <section class="page-shell results-section">
   <div class="results-toolbar"><div><strong>{{ listings|length }} places</strong>{% if sorted_by_distance %}<span class="nearby-badge">Nearest first</span>{% endif %}{% if fuzzy_used %}<span class="close-match-note">Close spelling matches</span>{% endif %}</div><span class="results-online-note">Availability is checked on each listing.</span></div>
   {% if listings %}<div class="property-grid">{% for item in listings %}{% include '_listing_card.html' %}{% endfor %}</div>

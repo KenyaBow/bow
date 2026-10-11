@@ -13,6 +13,7 @@ A responsive Flask + SQLite marketplace starter for rental homes, short stays, s
 - Explicit opt-in device location for nearby sorting. Only approximate coordinates rounded to three decimal places are stored for visitor analytics; no IP addresses are stored. Browsers do not reveal a phone number automatically: deduplication uses the browser key, and a provided/registered phone or account can reconcile visits across browsers.
 - Platform and property QR codes, configurable public logo (including favicon/PWA branding), manifest, installable PWA shell with cache version refresh, offline fallback warning, dynamic sitemap and robots.txt. The landing counter gently animates to the recorded unique browser/account/voluntarily provided phone total; it does not fabricate visitors.
 - Optional campaign placement inside search results, managed from Site & Fees: image, short message, destination link, or a safely embedded public YouTube/Vimeo video. It never turns the two-choice welcome screen into a pop-up.
+- Compact source-linked market discovery cards appear before the search form, so Find a Place is populated immediately. The initial database seeds a rotating mix of public property ads with original-source links; a small social-profile strip gives direct entry to public TikTok, Instagram and Facebook property posts. Admin can add, edit, disable, refresh or delete source cards under Market discoveries.
 - Typo-tolerant search fallback for likely spelling mistakes, budget widening, optional GPS-nearby sorting, in-page route preview and turn-by-turn Google Maps directions from current location or a typed landmark.
 - SQLite snapshot backups, daily automatic snapshots (14 retained), manual backup creation, download, and validated restore with a safety backup first.
 
@@ -68,8 +69,8 @@ The Blueprint mounts a persistent disk at `/var/data`. The app uses this path au
 
 ## Important production notes / limitations
 
-- Social account buttons are optional and administrator-configurable. The public homepage intentionally keeps only the two main entry choices.
-- This starter does not automatically scrape or repost homes from social media. Add real property content only with appropriate owner/agent authorization; any demo property information should be clearly labelled as illustrative until it is verified.
+- Social account buttons are optional and administrator-configurable. The public homepage intentionally keeps only the two main entry choices; the Find a Place screen has a rotating source shelf and direct links to public property profiles on social platforms.
+- External market cards are curated starter links to public property ads, not PataMahali-verified listings. The site does not silently scrape TikTok, Instagram or Facebook (public-profile scraping is unreliable and may violate platform terms). Admin can add a specific public post URL and image link to the Market discoveries screen. Update the source-check date after reviewing each listing; always ask the source advertiser to confirm availability.
 
 - **Payment verification is manual in this release.** The system records the M-Pesa/payment reference and an admin action. Automatic Safaricom M-Pesa verification requires your own Daraja app credentials, callback URL and testing; no payment is represented as verified without an admin confirmation.
 - **Verification is an operational process, not magic.** The site cannot autonomously prove that a house exists or that an uploader has legal authority. An authorized team must review evidence and/or inspect properties before marking them verified.

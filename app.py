@@ -95,6 +95,7 @@ DEFAULT_SETTINGS = {
     "show_landing_qr_enabled": "1",
     "show_visitor_counter_enabled": "1",
     "show_partner_directory_enabled": "1",
+    "market_discoveries_enabled": "1",
     "promo_enabled": "0",
     "promo_title": "",
     "promo_text": "",
@@ -273,6 +274,27 @@ CREATE TABLE IF NOT EXISTS auth_attempts (
     window_started TEXT NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS market_discoveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'residential',
+    property_type TEXT NOT NULL DEFAULT 'Apartment',
+    price_amount REAL,
+    price_period TEXT NOT NULL DEFAULT 'per month',
+    location_name TEXT NOT NULL DEFAULT '',
+    bedrooms INTEGER,
+    bathrooms INTEGER,
+    summary TEXT NOT NULL DEFAULT '',
+    source_name TEXT NOT NULL DEFAULT '',
+    source_url TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    social_url TEXT NOT NULL DEFAULT '',
+    source_checked_at TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_listings_public ON listings(status, approval_status, payment_status, category);
 CREATE INDEX IF NOT EXISTS idx_listings_owner ON listings(owner_id, posted_at);
 CREATE INDEX IF NOT EXISTS idx_interests_listing ON interests(listing_id, created_at);
@@ -317,6 +339,20 @@ def init_db() -> None:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
         for key, value in DEFAULT_SETTINGS.items():
             conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
+        # These are source-linked market examples, not verified PataMahali inventory.
+        # They are editable, disableable and deletable in the admin workspace.
+        if conn.execute("SELECT COUNT(*) FROM market_discoveries").fetchone()[0] == 0:
+            checked = "2026-10-11"
+            now = now_iso()
+            starter_discoveries = [
+                ("3 Bedroom Apartment All Ensuite", "residential", "3-bedroom apartment", 100000, "per month", "Lower Kabete Road, Westlands", 3, 3, "Listed by Elitors Agencies. The advertiser describes borehole water, parking, backup power and security; confirm these details with the source.", "Kenya Property Centre", "https://kenyapropertycentre.com/for-rent/flats-apartments/nairobi/westlands/69179-3-bedroom-apartment-all-ensuite", "https://images.kenyapropertycentre.com/properties/images/69179/06ac663af27d1c-3-bedroom-apartment-all-ensuite-for-rent-westlands-nairobi.webp", "", checked, 1, 1, now, now),
+                ("2 Bedroom Apartment", "residential", "2-bedroom apartment", 105000, "per month", "Westlands, Nairobi", 2, 2, "Advertiser describes parking, lift, gym, pool, backup power and borehole water. Confirm the exact unit and current terms with the source.", "Kenya Property Centre", "https://kenyapropertycentre.com/for-rent/flats-apartments/nairobi/westlands/69237-2-bedroom-apartment", "https://images.kenyapropertycentre.com/properties/images/69237/06ac7cebd65b87-2-bedroom-apartment-for-rent-westlands-nairobi.webp", "", checked, 1, 2, now, now),
+                ("Stunning 3 Bedroom Apartment", "residential", "3-bedroom apartment", 140000, "per month", "Lavington, Nairobi", 3, 3, "Public advertiser listing for a three-bedroom apartment. Confirm current availability, full price terms and viewing details on the source page.", "Kenya Property Centre", "https://kenyapropertycentre.com/for-rent/flats-apartments/nairobi/lavington/69000-stunning-3-bedroom-apartment", "https://images.kenyapropertycentre.com/properties/images/69000/06abf42a1909eb-stunning-3-bedroom-apartment-for-rent-lavington-nairobi.webp", "", checked, 1, 3, now, now),
+                ("The Loftel · studio and apartment options", "residential", "Apartment block", 27000, "per month", "Rosslyn Slaughter Road, Ruaka", None, None, "The source lists multiple unit types with indicative rents. Price varies by unit; confirm the specific unit and current availability before visiting.", "City Dwelling", "https://city-dwelling.com/properties/the-loftel-675d4cc7cd94f95b6aa195d1", "https://storage.googleapis.com/citydwelling/photos/TheLoftel/TheLoftel01.webp", "", checked, 1, 4, now, now),
+                ("Executive 2 Bedroom with Study", "residential", "2-bedroom apartment", 65000, "per month", "Lavington, Nairobi", 2, 2, "Public listing for a two-bedroom apartment with a study. Check the original source for whether the unit remains available and for the full deposit terms.", "Kenya Property Centre", "https://kenyapropertycentre.com/for-rent/flats-apartments/nairobi/lavington/68999-executive-2-bedroom-with-study", "https://images.kenyapropertycentre.com/properties/images/68999/06abf413b9cb15-executive-2-bedroom-with-study-for-rent-lavington-nairobi.webp", "", checked, 1, 5, now, now),
+                ("Executive Fully Furnished 2 Bedroom Apartment", "short_stay", "Furnished apartment", 200000, "per month", "Kileleshwa, Nairobi", 2, 2, "Furnished short-let advertisement with an indicative monthly price. Confirm dates, service inclusions and current availability with the source advertiser.", "Kenya Property Centre", "https://kenyapropertycentre.com/for-rent/short-let/flats-apartments/nairobi/kileleshwa/68324-executive-fully-furnished-2-bedroom-apartment", "https://images.kenyapropertycentre.com/properties/images/68324/06ab0d2970df32-executive-fully-furnished-2-bedroom-apartment-short-let-kileleshwa-nairobi.webp", "", checked, 1, 6, now, now),
+            ]
+            conn.executemany('INSERT INTO market_discoveries(title,category,property_type,price_amount,price_period,location_name,bedrooms,bathrooms,summary,source_name,source_url,image_url,social_url,source_checked_at,enabled,display_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', starter_discoveries)
         old_brand = conn.execute("SELECT value FROM settings WHERE key='brand_primary'").fetchone()
         if old_brand and old_brand[0].strip().lower() in {"#176b4d", "#223a63"}:
             conn.execute("UPDATE settings SET value='#283A62' WHERE key='brand_primary'")
@@ -740,6 +776,7 @@ def inject_globals():
         "money": money,
         "admin_root": ADMIN_ROOT,
         "current_year": datetime.now().year,
+        "current_date": datetime.now(timezone.utc).date().isoformat(),
     }
 
 
@@ -812,13 +849,46 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def market_discoveries(limit: int = 8, category: str = "", query: str = "", location: str = ""):
+    """Return rotating, source-linked listings separate from verified internal inventory."""
+    if setting("market_discoveries_enabled", "1") != "1":
+        return []
+    rows = list(get_db().execute("SELECT * FROM market_discoveries WHERE enabled=1 ORDER BY display_order,id"))
+    if category in CATEGORY_META:
+        rows = [row for row in rows if row["category"] == category]
+    search_text = " ".join(value for value in (query, location) if value).strip()
+    if search_text:
+        scored = []
+        for row in rows:
+            haystack = " ".join(str(row[key] or "") for key in ("title", "property_type", "location_name", "summary", "source_name"))
+            score = _fuzzy_search_score(search_text, haystack)
+            if score >= 0.55:
+                scored.append((score, row))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        rows = [row for _, row in scored]
+    if not rows:
+        return []
+    # Same order for the visitor in a six-hour window; vary between visitors and windows.
+    bucket = int(datetime.now(timezone.utc).timestamp() // (6 * 60 * 60))
+    visitor_seed = getattr(g, "visitor_key", "") or "guest"
+    offset = int(hashlib.sha256(f"{visitor_seed}:{bucket}".encode()).hexdigest()[:8], 16) % len(rows)
+    rows = rows[offset:] + rows[:offset]
+    return rows[:limit]
+
+
 @app.route("/")
 def index():
-    rows = public_listings(limit=12)
+    rows = list(public_listings(limit=24))
+    # Rotate the homepage selection every four hours so returning visitors see a
+    # changing shelf, while all entries still pass the normal publication checks.
+    if rows:
+        bucket = int(datetime.now(timezone.utc).timestamp() // (4 * 60 * 60))
+        offset = bucket % len(rows)
+        rows = (rows[offset:] + rows[:offset])[:12]
     counts = {key: get_db().execute("SELECT COUNT(*) FROM listings l JOIN users u ON u.id=l.owner_id WHERE l.category=? AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 AND l.last_confirmed_at>=? AND u.verified=1 AND u.suspended=0", (key, freshness_threshold())).fetchone()[0] for key in CATEGORY_META}
     partners = get_db().execute("SELECT u.id,u.full_name,u.business_name,u.role,COUNT(l.id) AS listing_count FROM users u LEFT JOIN listings l ON l.owner_id=u.id AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 WHERE u.role IN ('owner','agent','host','business') AND u.verified=1 AND u.suspended=0 GROUP BY u.id ORDER BY listing_count DESC,u.full_name LIMIT 6").fetchall()
     visitor_count = get_db().execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator'").fetchone()[0]
-    return render_template("index.html", listings=rows, counts=counts, partners=partners, visitor_count=visitor_count, invite_url=public_base() + "/")
+    return render_template("index.html", listings=rows, market_items=market_discoveries(4), counts=counts, partners=partners, visitor_count=visitor_count, invite_url=public_base() + "/")
 
 
 def _search_tokens(value: str) -> list[str]:
@@ -949,6 +1019,7 @@ def homes():
         location=location, min_price=min_price, max_price=max_price, bedrooms=min_beds,
         types=CATEGORY_META.get(category, {}).get("types", []),
         sorted_by_distance=bool(user_lat and user_lon), fuzzy_used=fuzzy_used,
+        market_items=market_discoveries(4, category=category, query=q, location=location),
     )
 
 @app.route("/listing/<int:listing_id>")
@@ -1455,6 +1526,82 @@ def admin_dashboard():
     listings = conn.execute("SELECT l.*,u.full_name AS partner_name,u.business_name FROM listings l JOIN users u ON u.id=l.owner_id ORDER BY l.posted_at DESC LIMIT 8").fetchall()
     latest_events = conn.execute("SELECT * FROM visitor_events ORDER BY id DESC LIMIT 10").fetchall()
     return render_template("admin_dashboard.html", stats=stats, listings=listings, events=latest_events)
+
+
+@app.route("/manage-admin/discoveries", methods=["GET", "POST"])
+@admin_required
+def admin_market_discoveries():
+    if request.method == "POST":
+        action = request.form.get("action", "save").strip()
+        if action == "toggle_shelf":
+            set_setting("market_discoveries_enabled", "1" if request.form.get("enabled") else "0")
+            audit("market_discovery_shelf_toggled", "settings", "market_discoveries_enabled", setting("market_discoveries_enabled"))
+            flash("Market discovery shelf updated.", "success")
+            return redirect(url_for("admin_market_discoveries"))
+        try:
+            item_id = int(request.form.get("item_id") or 0)
+        except ValueError:
+            item_id = 0
+        title = request.form.get("title", "").strip()[:180]
+        category = request.form.get("category", "residential").strip()
+        property_type = request.form.get("property_type", "Apartment").strip()[:120]
+        location_name = request.form.get("location_name", "").strip()[:180]
+        summary = request.form.get("summary", "").strip()[:900]
+        source_name = request.form.get("source_name", "").strip()[:120]
+        source_url = safe_external_url(request.form.get("source_url", ""))
+        image_url = safe_external_url(request.form.get("image_url", ""))
+        social_url = safe_external_url(request.form.get("social_url", ""))
+        price_period = request.form.get("price_period", "per month").strip()
+        checked_at = request.form.get("source_checked_at", "").strip()[:10]
+        enabled = 1 if request.form.get("enabled") else 0
+        try:
+            price_amount = float(request.form.get("price_amount", "").strip()) if request.form.get("price_amount", "").strip() else None
+            bedrooms = int(request.form.get("bedrooms", "").strip()) if request.form.get("bedrooms", "").strip() else None
+            bathrooms = int(request.form.get("bathrooms", "").strip()) if request.form.get("bathrooms", "").strip() else None
+            display_order = int(request.form.get("display_order", "0") or 0)
+            if price_amount is not None and price_amount < 0: raise ValueError()
+            if bedrooms is not None and bedrooms < 0: raise ValueError()
+            if bathrooms is not None and bathrooms < 0: raise ValueError()
+        except ValueError:
+            flash("Enter valid non-negative values for price, bedrooms and bathrooms.", "error")
+            return redirect(url_for("admin_market_discoveries"))
+        if not title or not source_name or not source_url:
+            flash("Title, source name and source URL are required.", "error")
+            return redirect(url_for("admin_market_discoveries"))
+        if category not in CATEGORY_META: category = "residential"
+        if price_period not in PRICE_PERIODS: price_period = "per month"
+        if image_url and not image_url.startswith("https://"):
+            flash("Use a secure HTTPS image URL or leave it blank.", "error")
+            return redirect(url_for("admin_market_discoveries"))
+        if not checked_at: checked_at = datetime.now(timezone.utc).date().isoformat()
+        conn = get_db()
+        now = now_iso()
+        values = (title, category, property_type, price_amount, price_period, location_name, bedrooms, bathrooms, summary, source_name, source_url, image_url, social_url, checked_at, enabled, display_order, now)
+        if item_id:
+            exists = conn.execute("SELECT id FROM market_discoveries WHERE id=?", (item_id,)).fetchone()
+            if not exists: abort(404)
+            conn.execute("UPDATE market_discoveries SET title=?,category=?,property_type=?,price_amount=?,price_period=?,location_name=?,bedrooms=?,bathrooms=?,summary=?,source_name=?,source_url=?,image_url=?,social_url=?,source_checked_at=?,enabled=?,display_order=?,updated_at=? WHERE id=?", (*values, item_id))
+            audit("market_discovery_updated", "market_discovery", item_id, title)
+            flash("Market listing updated.", "success")
+        else:
+            conn.execute("INSERT INTO market_discoveries(title,category,property_type,price_amount,price_period,location_name,bedrooms,bathrooms,summary,source_name,source_url,image_url,social_url,source_checked_at,enabled,display_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (*values, now))
+            new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            audit("market_discovery_created", "market_discovery", new_id, title)
+            flash("Market listing added.", "success")
+        return redirect(url_for("admin_market_discoveries"))
+    items = get_db().execute("SELECT * FROM market_discoveries ORDER BY display_order,id").fetchall()
+    return render_template("admin_market.html", items=items, shelf_enabled=setting("market_discoveries_enabled", "1") == "1")
+
+
+@app.post("/manage-admin/discoveries/<int:item_id>/delete")
+@admin_required
+def admin_market_discovery_delete(item_id):
+    row = get_db().execute("SELECT title FROM market_discoveries WHERE id=?", (item_id,)).fetchone()
+    if not row: abort(404)
+    get_db().execute("DELETE FROM market_discoveries WHERE id=?", (item_id,))
+    audit("market_discovery_deleted", "market_discovery", item_id, row["title"])
+    flash("Market listing removed.", "success")
+    return redirect(url_for("admin_market_discoveries"))
 
 
 @app.route("/manage-admin/listings")
