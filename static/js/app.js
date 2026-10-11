@@ -224,4 +224,189 @@
       }, {enableHighAccuracy: true, timeout: 12000, maximumAge: 10000});
     });
   }
+
+
+  // On the finder, open a property in an in-page sheet. Only same-origin listing
+  // pages are fetched; external property portals are never followed from a card.
+  const propertyResults = document.querySelector('.finder-results');
+  if (propertyResults) {
+    const previewDialog = document.createElement('dialog');
+    previewDialog.className = 'property-preview-dialog';
+    previewDialog.setAttribute('aria-label', 'Property details');
+    previewDialog.innerHTML = `
+      <div class="property-preview-frame">
+        <div class="property-preview-top"><span class="property-preview-kicker">PROPERTY DETAILS</span><button type="button" class="property-preview-close" aria-label="Close property details" data-preview-close>×</button></div>
+        <div class="property-preview-content" data-preview-content><p>Loading property details…</p></div>
+      </div>`;
+    document.body.appendChild(previewDialog);
+    const content = previewDialog.querySelector('[data-preview-content]');
+    previewDialog.querySelector('[data-preview-close]').addEventListener('click', () => previewDialog.close());
+    previewDialog.addEventListener('click', (event) => {
+      if (event.target === previewDialog) previewDialog.close();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && previewDialog.open) previewDialog.close();
+    });
+
+    const safeLocalImage = (source) => {
+      try {
+        const parsed = new URL(source, window.location.origin);
+        return parsed.origin === window.location.origin ? parsed.href : '';
+      } catch (_) { return ''; }
+    };
+
+    const plainTextSection = (title, value) => {
+      if (!value) return null;
+      const section = document.createElement('section');
+      section.className = 'property-preview-section';
+      const heading = document.createElement('h3');
+      heading.textContent = title;
+      const paragraph = document.createElement('p');
+      paragraph.textContent = value;
+      section.append(heading, paragraph);
+      return section;
+    };
+
+    const buildPreview = (sourceDoc) => {
+      content.replaceChildren();
+      const gallery = document.createElement('div');
+      gallery.className = 'property-preview-gallery';
+      const mainFigure = document.createElement('div');
+      mainFigure.className = 'property-preview-main-image';
+      const mainImage = sourceDoc.querySelector('.gallery-main img');
+      const thumbnails = [...sourceDoc.querySelectorAll('.gallery-thumbs img')];
+      const imageSources = [mainImage, ...thumbnails].filter(Boolean)
+        .map((image) => safeLocalImage(image.getAttribute('src'))).filter(Boolean)
+        .filter((source, index, all) => all.indexOf(source) === index);
+      if (imageSources.length) {
+        const hero = document.createElement('img');
+        hero.src = imageSources[0];
+        hero.alt = 'Property photograph';
+        hero.loading = 'eager';
+        mainFigure.appendChild(hero);
+        gallery.appendChild(mainFigure);
+        if (imageSources.length > 1) {
+          const rail = document.createElement('div');
+          rail.className = 'property-preview-thumbnails';
+          imageSources.forEach((source, index) => {
+            const thumb = document.createElement('button');
+            thumb.type = 'button';
+            thumb.className = 'property-preview-thumb' + (index === 0 ? ' is-active' : '');
+            thumb.setAttribute('aria-label', `View property photo ${index + 1}`);
+            const image = document.createElement('img');
+            image.src = source; image.alt = ''; image.loading = 'lazy';
+            thumb.appendChild(image);
+            thumb.addEventListener('click', () => {
+              hero.src = source;
+              rail.querySelectorAll('button').forEach((button) => button.classList.remove('is-active'));
+              thumb.classList.add('is-active');
+            });
+            rail.appendChild(thumb);
+          });
+          gallery.appendChild(rail);
+        }
+      } else {
+        const noPhoto = document.createElement('div');
+        noPhoto.className = 'property-preview-no-photo';
+        noPhoto.textContent = 'No property photographs available';
+        gallery.appendChild(noPhoto);
+      }
+      content.appendChild(gallery);
+
+      const detailHeading = sourceDoc.querySelector('.detail-heading');
+      if (detailHeading) {
+        const titleLine = document.createElement('div');
+        titleLine.className = 'property-preview-title-line';
+        const title = document.createElement('h2');
+        title.textContent = detailHeading.querySelector('h1')?.textContent.trim() || 'Property';
+        const price = detailHeading.querySelector('.detail-price');
+        titleLine.appendChild(title);
+        if (price) {
+          const priceNode = document.createElement('div');
+          priceNode.className = 'property-preview-price';
+          priceNode.textContent = price.innerText.replace(/\s+/g, ' ').trim();
+          titleLine.appendChild(priceNode);
+        }
+        content.appendChild(titleLine);
+        const location = detailHeading.querySelector('.detail-location');
+        if (location && location.textContent.trim()) {
+          const area = document.createElement('p');
+          area.className = 'property-preview-location';
+          area.textContent = location.textContent.replace(/\s+/g, ' ').trim();
+          content.appendChild(area);
+        }
+      }
+
+      const facts = sourceDoc.querySelector('.facts-grid');
+      if (facts) {
+        const clone = facts.cloneNode(true);
+        clone.classList.add('property-preview-facts');
+        content.appendChild(clone);
+      }
+
+      const allowedSections = new Set(['About this place', 'Condition', 'Water supply', 'Amenities and other details']);
+      sourceDoc.querySelectorAll('.detail-section').forEach((section) => {
+        const label = section.querySelector('h2')?.textContent.trim() || '';
+        if (!allowedSections.has(label)) return;
+        const paragraph = section.querySelector('p');
+        const built = plainTextSection(label, paragraph?.textContent.trim() || '');
+        if (built) content.appendChild(built);
+      });
+
+      const partnerPhone = sourceDoc.querySelector('.property-contact-number a[href^="tel:"]');
+      if (partnerPhone) {
+        const contact = document.createElement('section');
+        contact.className = 'property-preview-contact';
+        const title = document.createElement('h3'); title.textContent = 'Contact owner or agent';
+        const number = document.createElement('a');
+        number.href = partnerPhone.getAttribute('href');
+        number.textContent = partnerPhone.textContent.trim();
+        number.className = 'property-preview-phone';
+        contact.append(title, number);
+        content.appendChild(contact);
+      }
+    };
+
+    let previewRequest = 0;
+    const openPropertyPreview = async (href) => {
+      const target = new URL(href, window.location.origin);
+      if (target.origin !== window.location.origin || !target.pathname.startsWith('/listing/')) return;
+      const requestId = ++previewRequest;
+      content.innerHTML = '<p class="property-preview-loading">Loading property details…</p>';
+      if (typeof previewDialog.showModal === 'function' && !previewDialog.open) previewDialog.showModal();
+      else if (!previewDialog.open) { window.location.href = target.href; return; }
+      try {
+        const response = await fetch(target.href, {credentials: 'same-origin', cache: 'no-store', headers: {'X-PataMahali-Preview': '1'}});
+        if (!response.ok) throw new Error('Could not load property details.');
+        const html = await response.text();
+        if (requestId !== previewRequest || !previewDialog.open) return;
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        if (!parsed.querySelector('.detail-layout')) throw new Error('Property page was not available.');
+        buildPreview(parsed);
+      } catch (_) {
+        if (previewDialog.open && requestId === previewRequest) {
+          content.replaceChildren();
+          const error = document.createElement('p');
+          error.className = 'property-preview-loading';
+          error.textContent = 'Details could not be loaded.';
+          const retryLink = document.createElement('a');
+          retryLink.href = target.pathname + target.search;
+          retryLink.textContent = ' Open property details on this site.';
+          error.appendChild(retryLink);
+          content.appendChild(error);
+        }
+      }
+    };
+
+    propertyResults.addEventListener('click', (event) => {
+      const link = event.target.closest('a[data-property-preview]');
+      if (!link || !propertyResults.contains(link)) return;
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = new URL(link.href, window.location.origin);
+      if (target.origin !== window.location.origin || !target.pathname.startsWith('/listing/')) return;
+      event.preventDefault();
+      openPropertyPreview(target.href);
+    });
+  }
+
 })();

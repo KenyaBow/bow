@@ -1,3 +1,17 @@
+# PataMahali — v11 Mobile Property Browser Refinement
+
+## UI changes in this build
+- Landing-button lights now trace the rectangular outlines: green clockwise on “Find a place” and red anticlockwise on “List a property”. The light is clipped to the border rather than rotating as a clock-hand shape.
+- The finder uses compact two-column property cards on phones and three columns at wider widths. Prices remain in the pale-green band.
+- Tapping a property card opens a same-site detail sheet with local property photographs, price, location, facts, descriptions and the owner/agent phone number. It does not send visitors to external property-portal pages.
+- Finder search no longer uses the compass or magnifying-glass glyphs.
+- On phones, the header and slim copyright footer stay still; the central page content scrolls like an app.
+- The PWA cache/version was incremented so browsers fetch this CSS/JS update.
+
+**Property data note:** the public finder renders actual property records already submitted to this app and approved under its existing payment/partner/property checks. This build does not fabricate active addresses or copy third-party photos and telephone numbers without authorization. To populate the long grid with genuine available properties, upload authorized house photos and details via owner/agent listing submission (or add approved records through the existing admin workflow); admins can subsequently edit, reject, mark taken, or delete them.
+
+---
+
 # PataMahali — deployable verified property marketplace
 
 ## Premium finder refresh

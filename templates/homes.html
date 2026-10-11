@@ -28,8 +28,8 @@
       <form action="{{ url_for('homes') }}" method="get" id="houseSearchForm">
         <input type="hidden" name="category" value="{{ category or 'residential' }}">
         <div class="finder-search-row">
-          <label class="finder-search-query"><span class="visually-hidden">Search places</span><span class="finder-search-icon" aria-hidden="true">⌕</span><input type="search" name="q" value="{{ q }}" placeholder="Search homes, features or landmarks" autocomplete="off"></label>
-          <label class="finder-search-location"><span class="visually-hidden">Area</span><span class="finder-search-icon" aria-hidden="true">⌖</span><input name="location" value="{{ location }}" placeholder="Area or estate" autocomplete="address-level2"></label>
+          <label class="finder-search-query"><span class="visually-hidden">Search places</span><input type="search" name="q" value="{{ q }}" placeholder="Search homes, features or landmarks" autocomplete="off"></label>
+          <label class="finder-search-location"><span class="visually-hidden">Area</span><input name="location" value="{{ location }}" placeholder="Area or estate" autocomplete="address-level2"></label>
           <button class="finder-search-button" type="submit">Search <span aria-hidden="true">↗</span></button>
         </div>
         <details class="finder-filters">
@@ -56,7 +56,7 @@
     <section class="finder-results" aria-label="Property listings">
       {% if sorted_by_distance or fuzzy_used %}<div class="finder-result-flags">{% if sorted_by_distance %}<span>Nearest first</span>{% endif %}{% if fuzzy_used %}<span>Close matches</span>{% endif %}</div>{% endif %}
       {% if listings %}<div class="property-grid">{% for item in listings %}{% include '_listing_card.html' %}{% endfor %}</div>
-      {% else %}<div class="finder-empty"><span class="finder-empty-mark" aria-hidden="true">⌕</span><h2>No {{ 'rentals' if category == 'residential' else 'places' }} found</h2><a href="{{ url_for('homes', category=category or 'residential') }}">Clear search</a></div>{% endif %}
+      {% else %}<div class="finder-empty"><h2>No {{ 'rentals' if category == 'residential' else 'places' }} found</h2><a href="{{ url_for('homes', category=category or 'residential') }}">Clear search</a></div>{% endif %}
     </section>
   </main>
 </div>

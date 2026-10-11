@@ -7,7 +7,7 @@
   <meta name="description" content="{% block meta_description %}{{ site_settings.get('site_description', 'Find homes, stays, shops, warehouses and property with clear details.') }}{% endblock %}">
   <link rel="manifest" href="{{ url_for('manifest') }}">
   {% if site_settings.get('site_logo') %}<link rel="icon" href="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}">{% else %}<link rel="icon" href="{{ url_for('icon_svg') }}" type="image/svg+xml">{% endif %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261011f') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261011g') }}">
   <title>{% block title %}{{ site_settings.get('site_name', 'PataMahali') }} · Find the right place{% endblock %}</title>
   <style>:root{--brand:{{ site_settings.get('brand_primary','#102641') }};--accent:{{ site_settings.get('brand_accent','#C8A45D') }};}</style>
   {% block head %}{% endblock %}
@@ -89,7 +89,7 @@
     <div class="footer-bottom"><span>© {{ current_year }} {{ site_settings.get('site_name','PataMahali') }}. All rights reserved.</span></div>
   </footer>
   <script>window.APP_CSRF={{ session.get('csrf_token','')|tojson }};</script>
-  <script src="{{ url_for('static', filename='js/app.js', v='20261011f') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='20261011g') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
