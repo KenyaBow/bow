@@ -7,7 +7,7 @@
   <meta name="description" content="{% block meta_description %}{{ site_settings.get('site_description', 'Find homes, stays, shops, warehouses and property with clear details.') }}{% endblock %}">
   <link rel="manifest" href="{{ url_for('manifest') }}">
   {% if site_settings.get('site_logo') %}<link rel="icon" href="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}">{% else %}<link rel="icon" href="{{ url_for('icon_svg') }}" type="image/svg+xml">{% endif %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261011d') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261011f') }}">
   <title>{% block title %}{{ site_settings.get('site_name', 'PataMahali') }} · Find the right place{% endblock %}</title>
   <style>:root{--brand:{{ site_settings.get('brand_primary','#102641') }};--accent:{{ site_settings.get('brand_accent','#C8A45D') }};}</style>
   {% block head %}{% endblock %}
@@ -22,11 +22,28 @@
       <span class="brand-copy"><strong>{{ site_settings.get('site_name', 'PataMahali') }}</strong></span>
     </a>
     <div class="site-header-actions">
-      {% if current_user and current_user['role'] in ['owner','agent','host','business'] %}
-        <a class="header-partner-cta" href="{{ url_for('partner_dashboard') }}">My properties <span aria-hidden="true">↗</span></a>
-      {% else %}
-        <a class="header-partner-cta" href="{{ url_for('partner_register') }}">Become a partner <span aria-hidden="true">↗</span></a>
-      {% endif %}
+      <button class="header-partner-cta header-more-toggle" type="button" data-more-toggle aria-expanded="false" aria-controls="headerMoreMenu">Partner &amp; more <span aria-hidden="true">⌄</span></button>
+      <div class="header-more-menu" id="headerMoreMenu" data-more-menu hidden>
+        <div class="header-more-kicker">FOR OWNERS &amp; VISITORS</div>
+        {% if current_user and current_user['role'] in ['owner','agent','host','business'] %}
+          <a class="header-menu-primary" href="{{ url_for('partner_dashboard') }}"><span>My properties</span><span aria-hidden="true">↗</span></a>
+        {% else %}
+          <a class="header-menu-primary" href="{{ url_for('partner_register') }}"><span>Become a partner</span><span aria-hidden="true">↗</span></a>
+        {% endif %}
+        {% if current_user and current_user['role'] in ['owner','agent','host','business'] %}<a class="header-more-link" href="{{ url_for('partner_register') }}">List another property <span aria-hidden="true">↗</span></a>{% endif %}
+        {% if site_settings.get('show_partner_directory_enabled','1') == '1' %}<a class="header-more-link" href="{{ url_for('partners_directory') }}">Property partners <span aria-hidden="true">↗</span></a>{% endif %}
+        {% if site_settings.get('promo_enabled','0') == '1' and (site_settings.get('promo_title') or site_settings.get('promo_text') or site_settings.get('promo_link')) %}
+          <div class="header-menu-featured">
+            {% if site_settings.get('promo_title') %}<strong>{{ site_settings.get('promo_title') }}</strong>{% endif %}
+            {% if site_settings.get('promo_text') %}<p>{{ site_settings.get('promo_text') }}</p>{% endif %}
+            {% if site_settings.get('promo_link') %}<a href="{{ site_settings.get('promo_link') }}" target="_blank" rel="noopener noreferrer">{{ site_settings.get('promo_link_label') or 'Explore' }} <span aria-hidden="true">↗</span></a>{% endif %}
+          </div>
+        {% endif %}
+        {% for resource in header_resource_links %}<a class="header-more-link" href="{{ resource.url }}" target="_blank" rel="noopener noreferrer">{{ resource.label }} <span aria-hidden="true">↗</span></a>{% endfor %}
+        {% if site_settings.get('support_phone') or site_settings.get('support_email') %}
+          <div class="header-more-contact">{% if site_settings.get('support_phone') %}<a href="https://wa.me/{{ site_settings.get('support_phone','')|replace('+','')|replace(' ','')|replace('-','')|replace('(','')|replace(')','') }}" target="_blank" rel="noopener noreferrer">Talk to the team</a>{% elif site_settings.get('support_email') %}<a href="mailto:{{ site_settings.get('support_email') }}">Talk to the team</a>{% endif %}</div>
+        {% endif %}
+      </div>
     </div>
     {% if request.endpoint != 'homes' %}
     <nav class="main-nav" id="mainNav" data-nav aria-label="Site navigation">
@@ -72,7 +89,7 @@
     <div class="footer-bottom"><span>© {{ current_year }} {{ site_settings.get('site_name','PataMahali') }}. All rights reserved.</span></div>
   </footer>
   <script>window.APP_CSRF={{ session.get('csrf_token','')|tojson }};</script>
-  <script src="{{ url_for('static', filename='js/app.js', v='20261011d') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='20261011f') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

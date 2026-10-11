@@ -5,12 +5,9 @@
 {% block content %}
 <section class="entry-minimal" aria-label="Welcome to {{ site_settings.get('site_name','PataMahali') }}">
   <div class="entry-opening-sequence" aria-hidden="true">
-    <span class="entry-opening-orbit"></span>
-    <span class="entry-opening-symbol">
-      {% if site_settings.get('site_logo') %}<img src="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}" alt="">{% else %}<img src="{{ url_for('icon_svg') }}" alt="">{% endif %}
-    </span>
+    <span class="entry-opening-welcome">Welcome to</span>
     <span class="entry-opening-name">{{ site_settings.get('site_name','PataMahali') }}</span>
-    <span class="entry-opening-line"></span>
+    <span class="entry-opening-ash"></span>
   </div>
   <div class="entry-glow entry-glow-one" aria-hidden="true"></div>
   <div class="entry-glow entry-glow-two" aria-hidden="true"></div>

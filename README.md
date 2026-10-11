@@ -99,3 +99,15 @@ The admin URL is fixed at `/promise212324`. Do not add `ADMIN_PATH`, `DATA_DIR`,
 ## Before public launch
 
 Verify the final brand/domain legally; set actual payment recipient details and charges; set up persistent storage and encrypted off-site backups; change the admin password; conduct an identity/property verification trial; test payment reconciliation, listing expiry, taken-report reversal and restore; add appropriate privacy, terms, retention, refund, and complaints policies; and verify the production routes with real devices.
+
+## v10 responsive luxury refresh
+
+This refresh keeps the landing screen to one viewport on mobile, with a short smoke-style welcome reveal and two visually distinct choices. The Find a place gate uses a clockwise green light; List a property uses an anticlockwise ruby light. The main landing background is pale sky-blue, with the PataMahali wordmark in deep antique gold and the copyright line fixed at the bottom of the viewport.
+
+The finder has more readable mobile typography, a closer-to-the-top heading/search layout, horizontal single-column property cards on phones, black category labels on a light sidebar, and gold reserved for brand/active accents. The top-right `Partner & more` menu includes the partner entry point, optional enabled promotion, partner directory and additional admin-managed links.
+
+To manage additional links, open the private admin settings page and use **Partner & more menu**. Enable the section and enter one approved external site per line in this format:
+
+`Label | https://your-site.example`
+
+Only valid HTTP/HTTPS links are accepted. Up to eight links are displayed; remove a line to remove that link. The cache name and static asset query version are bumped to reduce stale mobile styling after deployment.

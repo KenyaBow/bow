@@ -109,6 +109,8 @@ DEFAULT_SETTINGS = {
     "promo_link_label": "Learn more",
     "promo_video_url": "",
     "promo_image": "",
+    "header_links_enabled": "0",
+    "header_links": "",
     "management_url": "",
     "support_phone": "",
     "support_email": "",
@@ -774,8 +776,18 @@ def inject_globals():
         key: meta for key, meta in CATEGORY_META.items()
         if settings.get(f"category_enabled_{key}", "1") == "1"
     }
+    header_resource_links = []
+    if settings.get("header_links_enabled", "0") == "1":
+        for raw_line in settings.get("header_links", "").splitlines()[:8]:
+            if "|" not in raw_line:
+                continue
+            label, target = raw_line.split("|", 1)
+            label, target = label.strip(), safe_external_url(target.strip())
+            if label and target:
+                header_resource_links.append({"label": label[:55], "url": target})
     return {
         "site_settings": settings,
+        "header_resource_links": header_resource_links,
         "promo_embed_url": safe_video_embed_url(settings.get("promo_video_url", "")),
         "current_user": user,
         "csrf_field": csrf_field,
@@ -1912,6 +1924,17 @@ def admin_settings():
             if key == "promo_video_url" and value and not safe_video_embed_url(value):
                 flash("Video must be a public YouTube or Vimeo link.", "error")
                 return redirect(url_for("admin_settings"))
+            if key == "header_links" and value:
+                for line_number, line in enumerate(value.splitlines(), 1):
+                    if not line.strip():
+                        continue
+                    if "|" not in line:
+                        flash(f"Header link line {line_number} must use Label | https://address format.", "error")
+                        return redirect(url_for("admin_settings"))
+                    label, target = line.split("|", 1)
+                    if not label.strip() or len(label.strip()) > 55 or not safe_external_url(target.strip()):
+                        flash(f"Header link line {line_number} needs a label (55 characters max) and a valid http:// or https:// URL.", "error")
+                        return redirect(url_for("admin_settings"))
             if key == "public_base_url" and value and not safe_external_url(value):
                 flash("Public base URL must begin with https:// or http:// and include a valid host.", "error")
                 return redirect(url_for("admin_settings"))
