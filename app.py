@@ -9,6 +9,9 @@ import sqlite3
 import uuid
 import hmac
 import hashlib
+import re
+from difflib import SequenceMatcher
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -41,7 +44,9 @@ DB_PATH = DATA_DIR / "patamahali.sqlite3"
 BACKUP_DIR = DATA_DIR / "backups"
 LISTING_UPLOAD_DIR = DATA_DIR / "uploads" / "listings"
 PRIVATE_DOC_DIR = DATA_DIR / "private_documents"
-for directory in (BACKUP_DIR, LISTING_UPLOAD_DIR, PRIVATE_DOC_DIR):
+BRANDING_DIR = DATA_DIR / "uploads" / "branding"
+PROMO_DIR = DATA_DIR / "uploads" / "promotions"
+for directory in (BACKUP_DIR, LISTING_UPLOAD_DIR, PRIVATE_DOC_DIR, BRANDING_DIR, PROMO_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 ADMIN_PATH = "promise212324"  # Fixed private admin entry; do not configure through Render variables.
@@ -84,8 +89,19 @@ DEFAULT_SETTINGS = {
     "site_name": "PataMahali",
     "tagline": "Find the right place.",
     "site_description": "Find verified homes, stays, shops, warehouses and property with clearer information and accountable listings.",
-    "brand_primary": "#176B4D",
-    "brand_accent": "#D9A441",
+    "brand_primary": "#283A62",
+    "brand_accent": "#C88A62",
+    "site_logo": "",
+    "show_landing_qr_enabled": "1",
+    "show_visitor_counter_enabled": "1",
+    "show_partner_directory_enabled": "1",
+    "promo_enabled": "0",
+    "promo_title": "",
+    "promo_text": "",
+    "promo_link": "",
+    "promo_link_label": "Learn more",
+    "promo_video_url": "",
+    "promo_image": "",
     "management_url": "",
     "support_phone": "",
     "support_email": "",
@@ -135,6 +151,9 @@ CREATE TABLE IF NOT EXISTS users (
     business_name TEXT NOT NULL DEFAULT '',
     email TEXT UNIQUE,
     phone TEXT NOT NULL DEFAULT '',
+    contact_preference TEXT NOT NULL DEFAULT 'whatsapp',
+    website_url TEXT NOT NULL DEFAULT '',
+    social_url TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
     identity_type TEXT NOT NULL DEFAULT 'national_id',
     identity_front TEXT NOT NULL DEFAULT '',
@@ -158,6 +177,7 @@ CREATE TABLE IF NOT EXISTS listings (
     bathrooms INTEGER,
     floor_area TEXT NOT NULL DEFAULT '',
     amenities TEXT NOT NULL DEFAULT '',
+    water_quality TEXT NOT NULL DEFAULT '',
     location_name TEXT NOT NULL,
     landmarks TEXT NOT NULL DEFAULT '',
     latitude REAL,
@@ -210,6 +230,10 @@ CREATE TABLE IF NOT EXISTS visitor_sessions (
     referrer TEXT NOT NULL DEFAULT '',
     device TEXT NOT NULL DEFAULT 'Unknown',
     page_views INTEGER NOT NULL DEFAULT 0,
+    visit_count INTEGER NOT NULL DEFAULT 1,
+    last_visit_at TEXT NOT NULL DEFAULT '',
+    contact_name TEXT NOT NULL DEFAULT '',
+    contact_phone TEXT NOT NULL DEFAULT '',
     latitude_approx REAL,
     longitude_approx REAL,
     location_shared INTEGER NOT NULL DEFAULT 0,
@@ -223,6 +247,17 @@ CREATE TABLE IF NOT EXISTS visitor_events (
     path TEXT NOT NULL DEFAULT '',
     details TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    reviewer_id INTEGER NOT NULL,
+    stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5),
+    review TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE(listing_id, reviewer_id),
+    FOREIGN KEY(listing_id) REFERENCES listings(id),
+    FOREIGN KEY(reviewer_id) REFERENCES users(id)
 );
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,8 +295,34 @@ def connect_db(path: Path = DB_PATH) -> sqlite3.Connection:
 def init_db() -> None:
     with connect_db() as conn:
         conn.executescript(SCHEMA)
+        # Forward-only, additive schema migrations keep existing Render SQLite databases usable.
+        migrations = {
+            "users": {
+                "contact_preference": "TEXT NOT NULL DEFAULT 'whatsapp'",
+                "website_url": "TEXT NOT NULL DEFAULT ''",
+                "social_url": "TEXT NOT NULL DEFAULT ''",
+            },
+            "listings": {"water_quality": "TEXT NOT NULL DEFAULT ''"},
+            "visitor_sessions": {
+                "visit_count": "INTEGER NOT NULL DEFAULT 1",
+                "last_visit_at": "TEXT NOT NULL DEFAULT ''",
+                "contact_name": "TEXT NOT NULL DEFAULT ''",
+                "contact_phone": "TEXT NOT NULL DEFAULT ''",
+            },
+        }
+        for table, columns in migrations.items():
+            present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            for column, declaration in columns.items():
+                if column not in present:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
         for key, value in DEFAULT_SETTINGS.items():
             conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
+        old_brand = conn.execute("SELECT value FROM settings WHERE key='brand_primary'").fetchone()
+        if old_brand and old_brand[0].strip().lower() in {"#176b4d", "#223a63"}:
+            conn.execute("UPDATE settings SET value='#283A62' WHERE key='brand_primary'")
+        old_accent = conn.execute("SELECT value FROM settings WHERE key='brand_accent'").fetchone()
+        if old_accent and old_accent[0].strip().lower() == "#d9a441":
+            conn.execute("UPDATE settings SET value='#C88A62' WHERE key='brand_accent'")
         admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
         if not admin:
             username = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
@@ -369,18 +430,35 @@ def csrf_field() -> Markup:
     return Markup(f'<input type="hidden" name="csrf_token" value="{token}">')
 
 
+def current_visitor_key() -> str:
+    return getattr(g, "visitor_key", None) or session.get("visitor_key", "")
+
+
+def normalize_visitor_phone(value: str) -> str:
+    """Normalize a voluntarily supplied phone number for duplicate-count reduction."""
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) == 10 and digits.startswith("0"):
+        digits = "254" + digits[1:]
+    return digits[:20]
+
+
 @app.before_request
 def prepare_request():
     if not session.get("csrf_token"):
         session["csrf_token"] = secrets.token_urlsafe(24)
-    if not session.get("visitor_key"):
-        session["visitor_key"] = secrets.token_urlsafe(20)
+    # A first-party cookie keeps the same anonymous browser identifier across
+    # ordinary closes/reopens. It does not reveal a phone number or a real identity.
+    stable_key = request.cookies.get("pm_visitor", "").strip()
+    if not stable_key or len(stable_key) > 100:
+        stable_key = session.get("visitor_key") or secrets.token_urlsafe(24)
+    g.visitor_key = stable_key
+    session["visitor_key"] = stable_key
     if request.method == "POST":
         expected = session.get("csrf_token", "")
         supplied = request.form.get("csrf_token", "") or request.headers.get("X-CSRFToken", "")
         if not expected or not supplied or not secrets.compare_digest(expected, supplied):
             abort(400, description="Your form session expired. Refresh the page and try again.")
-    if request.endpoint not in {"static", "manifest", "service_worker", "icon_svg", "robots_txt", "sitemap_xml", "qr_platform"}:
+    if request.endpoint not in {"static", "manifest", "service_worker", "icon_svg", "robots_txt", "sitemap_xml", "qr_platform", "promo_media"}:
         try:
             maybe_daily_backup()
         except Exception:
@@ -530,7 +608,7 @@ def is_public_listing(row) -> bool:
 def log_event(event_type: str, path: str, details: str = "") -> None:
     try:
         user = get_current_user()
-        visitor_key = session.get("visitor_key", "")
+        visitor_key = current_visitor_key()
         get_db().execute(
             "INSERT INTO visitor_events(visitor_key,user_id,event_type,path,details,created_at) VALUES(?,?,?,?,?,?)",
             (visitor_key, user["id"] if user else None, event_type, path[:500], details[:1500], now_iso()),
@@ -541,10 +619,18 @@ def log_event(event_type: str, path: str, details: str = "") -> None:
 
 def device_label(user_agent: str) -> str:
     ua = (user_agent or "").lower()
-    if any(token in ua for token in ("mobile", "android", "iphone", "ipad")):
-        return "Mobile / tablet"
+    if "iphone" in ua:
+        return "iPhone"
+    if "ipad" in ua:
+        return "iPad"
+    if "android" in ua and "mobile" in ua:
+        return "Android phone"
+    if "android" in ua:
+        return "Android tablet / device"
+    if any(token in ua for token in ("mobile", "windows phone")):
+        return "Mobile browser"
     if ua:
-        return "Desktop"
+        return "Desktop browser"
     return "Unknown"
 
 
@@ -557,12 +643,14 @@ def record_page_view(response):
     if request.path.startswith(("/manage-admin", ADMIN_ROOT, "/partner/", "/login", "/join")):
         response.headers["Cache-Control"] = "no-store"
     if request.method == "GET" and response.status_code < 400 and request.endpoint not in {
-        "static", "manifest", "service_worker", "icon_svg", "robots_txt", "sitemap_xml", "qr_platform", "listing_qr"
+        "static", "manifest", "service_worker", "icon_svg", "robots_txt", "sitemap_xml", "qr_platform", "listing_qr", "promo_media"
     }:
         try:
             user = get_current_user()
-            visitor_key = session.get("visitor_key", "")
-            existing = get_db().execute("SELECT visitor_key FROM visitor_sessions WHERE visitor_key=?", (visitor_key,)).fetchone()
+            visitor_key = current_visitor_key()
+            now = datetime.now(timezone.utc)
+            now_text = now.replace(microsecond=0).isoformat()
+            existing = get_db().execute("SELECT * FROM visitor_sessions WHERE visitor_key=?", (visitor_key,)).fetchone()
             role = "administrator" if user and user["role"] == "admin" else (
                 "partner" if user and user["role"] in {"owner", "agent", "host", "business"} else
                 "house seeker" if user and user["role"] == "seeker" else "visitor"
@@ -573,23 +661,70 @@ def record_page_view(response):
                     referrer = urlparse(request.referrer).netloc[:200]
                 except Exception:
                     referrer = ""
+            account_phone = normalize_visitor_phone(user["phone"] or "") if user else ""
+            account_name = (user["full_name"] or "") if user else ""
             if existing:
+                try:
+                    last_seen_dt = datetime.fromisoformat(existing["last_seen"])
+                    new_visit = (now - last_seen_dt) > timedelta(minutes=30)
+                except (TypeError, ValueError):
+                    new_visit = True
+                visit_count = int(existing["visit_count"] or 1) + (1 if new_visit else 0)
+                last_visit_at = now_text if new_visit or not existing["last_visit_at"] else existing["last_visit_at"]
+                known_phone = account_phone or existing["contact_phone"] or ""
+                known_name = account_name or existing["contact_name"] or ""
+                # Admin page visits are not counted as public visits. Existing admin browsers are
+                # still updated so they remain labelled as administration traffic.
                 get_db().execute(
-                    "UPDATE visitor_sessions SET user_id=?,role=?,last_seen=?,last_path=?,referrer=?,device=?,page_views=page_views+1 WHERE visitor_key=?",
-                    (user["id"] if user else None, role, now_iso(), request.path[:500], referrer, device_label(request.headers.get("User-Agent", "")), visitor_key),
+                    "UPDATE visitor_sessions SET user_id=?,role=?,last_seen=?,last_path=?,referrer=?,device=?,page_views=page_views+1,visit_count=?,last_visit_at=?,contact_phone=?,contact_name=? WHERE visitor_key=?",
+                    (user["id"] if user else existing["user_id"], role, now_text, request.path[:500], referrer, device_label(request.headers.get("User-Agent", "")), visit_count, last_visit_at, known_phone, known_name, visitor_key),
                 )
             else:
                 get_db().execute(
-                    "INSERT INTO visitor_sessions(visitor_key,user_id,role,first_seen,last_seen,last_path,referrer,device,page_views) VALUES(?,?,?,?,?,?,?,?,1)",
-                    (visitor_key, user["id"] if user else None, role, now_iso(), now_iso(), request.path[:500], referrer, device_label(request.headers.get("User-Agent", ""))),
+                    "INSERT INTO visitor_sessions(visitor_key,user_id,role,first_seen,last_seen,last_path,referrer,device,page_views,visit_count,last_visit_at,contact_phone,contact_name) VALUES(?,?,?,?,?,?,?,?,1,1,?,?,?)",
+                    (visitor_key, user["id"] if user else None, role, now_text, now_text, request.path[:500], referrer, device_label(request.headers.get("User-Agent", "")), now_text, account_phone, account_name),
                 )
             get_db().execute(
                 "INSERT INTO visitor_events(visitor_key,user_id,event_type,path,details,created_at) VALUES(?,?,?,?,?,?)",
-                (visitor_key, user["id"] if user else None, "page_view", request.path[:500], role, now_iso()),
+                (visitor_key, user["id"] if user else None, "page_view", request.path[:500], role, now_text),
             )
         except Exception as exc:
             print(f"Visitor analytics not recorded: {exc}")
+    # Retain an anonymous first-party visitor key for 180 days so repeat visits
+    # from this browser do not inflate unique-visitor counts. Cookie is HttpOnly.
+    stable_key = current_visitor_key()
+    if stable_key:
+        response.set_cookie(
+            "pm_visitor", stable_key, max_age=180 * 24 * 60 * 60,
+            httponly=True, secure=request.is_secure, samesite="Lax", path="/"
+        )
     return response
+
+
+def safe_video_embed_url(value: str) -> str:
+    """Allow only well-formed YouTube/Vimeo videos in the campaign placement."""
+    raw = safe_external_url(value)
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").lower()
+    path_parts = [part for part in parsed.path.split("/") if part]
+    video_id = ""
+    if host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        if parsed.path == "/watch":
+            from urllib.parse import parse_qs
+            video_id = (parse_qs(parsed.query).get("v") or [""])[0]
+        elif len(path_parts) >= 2 and path_parts[0] in {"embed", "shorts", "live"}:
+            video_id = path_parts[1]
+        if re.fullmatch(r"[A-Za-z0-9_-]{6,20}", video_id or ""):
+            return f"https://www.youtube-nocookie.com/embed/{video_id}"
+    elif host == "youtu.be" and path_parts and re.fullmatch(r"[A-Za-z0-9_-]{6,20}", path_parts[0]):
+        return f"https://www.youtube-nocookie.com/embed/{path_parts[0]}"
+    elif host in {"vimeo.com", "www.vimeo.com"} and path_parts and path_parts[0].isdigit():
+        return f"https://player.vimeo.com/video/{path_parts[0]}"
+    elif host == "player.vimeo.com" and len(path_parts) >= 2 and path_parts[0] == "video" and path_parts[1].isdigit():
+        return f"https://player.vimeo.com/video/{path_parts[1]}"
+    return ""
 
 
 @app.context_processor
@@ -597,6 +732,7 @@ def inject_globals():
     user = get_current_user()
     return {
         "site_settings": all_settings(),
+        "promo_embed_url": safe_video_embed_url(setting("promo_video_url", "")),
         "current_user": user,
         "csrf_field": csrf_field,
         "listing_images": listing_images,
@@ -654,7 +790,9 @@ def save_upload(file, target_dir: Path, allowed: set[str]) -> str:
 
 def public_listings(where: str = "", params: tuple = (), limit: int = 100):
     sql = """
-        SELECT l.*,u.full_name AS partner_name,u.business_name,u.role AS partner_role,u.verified AS partner_verified
+        SELECT l.*,u.full_name AS partner_name,u.business_name,u.role AS partner_role,u.verified AS partner_verified,
+               (SELECT ROUND(AVG(r.stars),1) FROM ratings r WHERE r.listing_id=l.id) AS rating_average,
+               (SELECT COUNT(*) FROM ratings r WHERE r.listing_id=l.id) AS rating_count
         FROM listings l JOIN users u ON u.id=l.owner_id
         WHERE l.status='available' AND l.approval_status='approved' AND l.payment_status='paid'
           AND l.property_verified=1 AND u.verified=1 AND u.suspended=0
@@ -679,8 +817,49 @@ def index():
     rows = public_listings(limit=12)
     counts = {key: get_db().execute("SELECT COUNT(*) FROM listings l JOIN users u ON u.id=l.owner_id WHERE l.category=? AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 AND l.last_confirmed_at>=? AND u.verified=1 AND u.suspended=0", (key, freshness_threshold())).fetchone()[0] for key in CATEGORY_META}
     partners = get_db().execute("SELECT u.id,u.full_name,u.business_name,u.role,COUNT(l.id) AS listing_count FROM users u LEFT JOIN listings l ON l.owner_id=u.id AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 WHERE u.role IN ('owner','agent','host','business') AND u.verified=1 AND u.suspended=0 GROUP BY u.id ORDER BY listing_count DESC,u.full_name LIMIT 6").fetchall()
-    visitor_count = get_db().execute("SELECT COUNT(DISTINCT visitor_key) FROM visitor_events WHERE event_type='page_view'").fetchone()[0]
-    return render_template("index.html", listings=rows, counts=counts, partners=partners, visitor_count=visitor_count)
+    visitor_count = get_db().execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator'").fetchone()[0]
+    return render_template("index.html", listings=rows, counts=counts, partners=partners, visitor_count=visitor_count, invite_url=public_base() + "/")
+
+
+def _search_tokens(value: str) -> list[str]:
+    return [token for token in re.findall(r"[a-z0-9]+", (value or "").casefold()) if len(token) > 1]
+
+
+def _fuzzy_search_score(query: str, searchable_text: str) -> float:
+    """Return a 0..1 score, tolerating typos without broadening every empty search."""
+    query_tokens = _search_tokens(query)
+    if not query_tokens:
+        return 0.0
+    words = set(_search_tokens(searchable_text))
+    if not words:
+        return 0.0
+    scores = []
+    for token in query_tokens:
+        if token in words:
+            scores.append(1.0)
+            continue
+        if len(token) >= 3 and any((token in word or word in token) and min(len(token), len(word)) >= 3 for word in words):
+            scores.append(0.88)
+            continue
+        if len(token) < 4:
+            scores.append(0.0)
+            continue
+        best = max((SequenceMatcher(None, token, word).ratio() for word in words), default=0.0)
+        scores.append(best if best >= 0.72 else 0.0)
+    matched = sum(1 for score in scores if score > 0)
+    if matched == len(scores):
+        return sum(scores) / len(scores)
+    # Allow one missed token in longer queries, but not a single lucky match.
+    if len(scores) >= 3 and matched >= len(scores) - 1:
+        return (sum(scores) / len(scores)) * 0.94
+    return 0.0
+
+
+def _listing_search_text(row) -> str:
+    category_label = CATEGORY_META.get(row["category"], {}).get("label", "")
+    return " ".join(str(row[key] or "") for key in (
+        "title", "description", "location_name", "landmarks", "property_type", "amenities", "water_quality"
+    )) + " " + category_label
 
 
 @app.route("/homes")
@@ -689,45 +868,92 @@ def homes():
     category = request.args.get("category", "").strip()
     property_type = request.args.get("type", "").strip()
     location = request.args.get("location", "").strip()[:120]
+    min_price = request.args.get("min_price", "").strip()
     max_price = request.args.get("max_price", "").strip()
     min_beds = request.args.get("bedrooms", "").strip()
-    params = []
-    clauses = []
+    base_clauses, base_params = [], []
     if category in CATEGORY_META:
-        clauses.append("l.category=?"); params.append(category)
+        base_clauses.append("l.category=?"); base_params.append(category)
     if property_type:
-        clauses.append("l.property_type=?"); params.append(property_type)
-    if q:
-        clauses.append("(l.title LIKE ? OR l.description LIKE ? OR l.location_name LIKE ? OR l.landmarks LIKE ? OR l.property_type LIKE ?)")
-        params.extend([f"%{q}%"] * 5)
-    if location:
-        clauses.append("(l.location_name LIKE ? OR l.landmarks LIKE ?)"); params.extend([f"%{location}%", f"%{location}%"])
+        base_clauses.append("l.property_type=?"); base_params.append(property_type)
+    if min_price:
+        try:
+            value = max(0, float(min_price)); base_clauses.append("l.price_amount>=?"); base_params.append(value)
+        except ValueError:
+            min_price = ""
     if max_price:
         try:
-            clauses.append("l.price_amount<=?"); params.append(float(max_price))
+            value = max(0, float(max_price)); base_clauses.append("l.price_amount<=?"); base_params.append(value)
         except ValueError:
             max_price = ""
+    if min_price and max_price:
+        try:
+            if float(min_price) > float(max_price):
+                min_price, max_price = max_price, min_price
+                # Rebuild the price clauses in the correct order.
+                base_clauses = [c for c in base_clauses if c not in {"l.price_amount>=?", "l.price_amount<=?"}]
+                base_params = [v for v in base_params if not isinstance(v, (float, int)) or True]
+                base_clauses.extend(["l.price_amount>=?", "l.price_amount<=?"])
+                # Preserve all non-price values by reconstructing from filters above.
+                base_params = []
+                if category in CATEGORY_META: base_params.append(category)
+                if property_type: base_params.append(property_type)
+                base_params.extend([float(min_price), float(max_price)])
+        except ValueError:
+            pass
     if min_beds:
         try:
-            clauses.append("COALESCE(l.bedrooms,0)>=?"); params.append(int(min_beds))
+            base_clauses.append("COALESCE(l.bedrooms,0)>=?"); base_params.append(int(min_beds))
         except ValueError:
             min_beds = ""
+    base_where = " AND ".join(base_clauses)
+    clauses, params = list(base_clauses), list(base_params)
+    if q:
+        clauses.append("(l.title LIKE ? OR l.description LIKE ? OR l.location_name LIKE ? OR l.landmarks LIKE ? OR l.property_type LIKE ? OR l.amenities LIKE ? OR l.water_quality LIKE ?)")
+        params.extend([f"%{q}%"] * 7)
+    if location:
+        clauses.append("(l.location_name LIKE ? OR l.landmarks LIKE ?)")
+        params.extend([f"%{location}%", f"%{location}%"])
     where = " AND ".join(clauses)
-    results = public_listings(where, tuple(params), 200)
+    results = public_listings(where, tuple(params), 300)
+    fuzzy_used = False
     user_lat, user_lon = request.args.get("lat", ""), request.args.get("lon", "")
+    if not results and (q or location):
+        # Search within other exact filters first. This handles common typos such as
+        # "Ruyaka" for "Ruaka" and "apartmant" for "apartment".
+        candidates = public_listings(base_where, tuple(base_params), 600)
+        search_text = " ".join(x for x in (q, location) if x)
+        scored = []
+        for candidate in candidates:
+            score = _fuzzy_search_score(search_text, _listing_search_text(candidate))
+            if score >= 0.70:
+                scored.append((score, candidate))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        results = [row for _, row in scored[:200]]
+        fuzzy_used = bool(results)
     if user_lat and user_lon:
         try:
             latf, lonf = float(user_lat), float(user_lon)
             results = sorted(results, key=lambda r: haversine_km(latf, lonf, r["latitude"], r["longitude"]) if r["latitude"] is not None and r["longitude"] is not None else 1e9)
         except (ValueError, TypeError):
-            pass
-    log_event("property_search", request.path, json.dumps({"q": q, "category": category, "location": location, "max_price": max_price, "bedrooms": min_beds, "count": len(results)}))
-    return render_template("homes.html", listings=results, q=q, category=category, property_type=property_type, location=location, max_price=max_price, bedrooms=min_beds, types=CATEGORY_META.get(category, {}).get("types", []), sorted_by_distance=bool(user_lat and user_lon))
-
+            user_lat, user_lon = "", ""
+    details = {
+        "q": q, "category": category, "type": property_type, "location": location,
+        "min_price": min_price, "max_price": max_price, "bedrooms": min_beds,
+        "count": len(results), "fuzzy_used": fuzzy_used,
+        "no_match": not bool(results), "sort_nearby": bool(user_lat and user_lon),
+    }
+    log_event("property_search", request.path, json.dumps(details))
+    return render_template(
+        "homes.html", listings=results, q=q, category=category, property_type=property_type,
+        location=location, min_price=min_price, max_price=max_price, bedrooms=min_beds,
+        types=CATEGORY_META.get(category, {}).get("types", []),
+        sorted_by_distance=bool(user_lat and user_lon), fuzzy_used=fuzzy_used,
+    )
 
 @app.route("/listing/<int:listing_id>")
 def listing_detail(listing_id: int):
-    row = get_db().execute("SELECT l.*,u.full_name AS partner_name,u.business_name,u.role AS partner_role,u.phone AS partner_phone,u.verified AS partner_verified FROM listings l JOIN users u ON l.owner_id=u.id WHERE l.id=?", (listing_id,)).fetchone()
+    row = get_db().execute("SELECT l.*,u.full_name AS partner_name,u.business_name,u.role AS partner_role,u.phone AS partner_phone,u.email AS partner_email,u.contact_preference AS contact_preference,u.website_url AS website_url,u.social_url AS social_url,u.verified AS partner_verified FROM listings l JOIN users u ON l.owner_id=u.id WHERE l.id=?", (listing_id,)).fetchone()
     if not row or not is_public_listing(row):
         abort(404)
     get_db().execute("UPDATE listings SET views=views+1 WHERE id=?", (listing_id,))
@@ -737,7 +963,37 @@ def listing_detail(listing_id: int):
         posted_display = posted.strftime("%d %b %Y")
     except (ValueError, TypeError):
         posted_display = row["posted_at"][:10]
-    return render_template("listing_detail.html", listing=row, images=listing_images(row), category=CATEGORY_META.get(row["category"], CATEGORY_META["residential"]), posted_display=posted_display)
+    rating_summary = get_db().execute("SELECT ROUND(AVG(stars),1) AS average,COUNT(*) AS count FROM ratings WHERE listing_id=?", (listing_id,)).fetchone()
+    my_rating = None
+    viewer = get_current_user()
+    if viewer and viewer["role"] == "seeker":
+        my_rating = get_db().execute("SELECT stars,review FROM ratings WHERE listing_id=? AND reviewer_id=?", (listing_id, viewer["id"])).fetchone()
+    return render_template("listing_detail.html", listing=row, images=listing_images(row), category=CATEGORY_META.get(row["category"], CATEGORY_META["residential"]), posted_display=posted_display, rating_summary=rating_summary, my_rating=my_rating)
+
+
+@app.post("/listing/<int:listing_id>/rate")
+@login_required
+def rate_listing(listing_id: int):
+    user = get_current_user()
+    if not user or user["role"] != "seeker":
+        flash("Property ratings are available to signed-in house seekers.", "warning")
+        return redirect(url_for("listing_detail", listing_id=listing_id) + "#ratings")
+    row = get_db().execute("SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
+    if not row or not is_public_listing(row): abort(404)
+    if row["owner_id"] == user["id"]:
+        flash("You cannot rate your own property.", "warning")
+        return redirect(url_for("listing_detail", listing_id=listing_id) + "#ratings")
+    try:
+        stars = int(request.form.get("stars", "5"))
+        if stars < 1 or stars > 5: raise ValueError()
+    except ValueError:
+        flash("Choose a rating from 1 to 5 stars.", "error")
+        return redirect(url_for("listing_detail", listing_id=listing_id) + "#ratings")
+    review = request.form.get("review", "").strip()[:1200]
+    get_db().execute("INSERT INTO ratings(listing_id,reviewer_id,stars,review,created_at) VALUES(?,?,?,?,?) ON CONFLICT(listing_id,reviewer_id) DO UPDATE SET stars=excluded.stars,review=excluded.review,created_at=excluded.created_at", (listing_id, user["id"], stars, review, now_iso()))
+    audit("property_rating_saved", "listing", listing_id, f"Stars={stars}")
+    flash("Your rating has been saved.", "success")
+    return redirect(url_for("listing_detail", listing_id=listing_id) + "#ratings")
 
 
 @app.post("/listing/<int:listing_id>/interest")
@@ -754,6 +1010,16 @@ def express_interest(listing_id: int):
         return redirect(url_for("listing_detail", listing_id=listing_id) + "#interest")
     user = get_current_user()
     cur = get_db().execute("INSERT INTO interests(listing_id,seeker_id,full_name,phone,email,message,created_at) VALUES(?,?,?,?,?,?,?)", (listing_id, user["id"] if user and user["role"] == "seeker" else None, name, phone, email, message, now_iso()))
+    # Link the voluntary enquiry contact to this browser, reducing repeat counts when
+    # the same person returns on another visit/device using the same supplied number.
+    visitor_key = current_visitor_key()
+    normalized_phone = normalize_visitor_phone(phone)
+    stamp = now_iso()
+    tracked = get_db().execute("SELECT visitor_key FROM visitor_sessions WHERE visitor_key=?", (visitor_key,)).fetchone()
+    if tracked:
+        get_db().execute("UPDATE visitor_sessions SET user_id=COALESCE(?,user_id),role='house seeker',contact_name=?,contact_phone=?,last_seen=?,last_path=? WHERE visitor_key=?", (user["id"] if user and user["role"] == "seeker" else None, name, normalized_phone, stamp, request.path[:500], visitor_key))
+    else:
+        get_db().execute("INSERT INTO visitor_sessions(visitor_key,user_id,role,first_seen,last_seen,last_path,device,page_views,visit_count,last_visit_at,contact_name,contact_phone) VALUES(?,?,?,?,?,?,?,0,1,?,?,?)", (visitor_key, user["id"] if user and user["role"] == "seeker" else None, "house seeker", stamp, stamp, request.path[:500], device_label(request.headers.get("User-Agent", "")), stamp, name, normalized_phone))
     log_event("interest_submitted", request.path, json.dumps({"listing_id": listing_id, "interest_id": cur.lastrowid}))
     audit("interest_submitted", "listing", listing_id, f"Enquiry submitted by {name}")
     flash("Your interest has been sent. The property partner can now contact you to confirm availability and viewing details.", "success")
@@ -800,8 +1066,12 @@ def partner_register():
         role = request.form.get("role", "owner").strip()
         email = request.form.get("email", "").strip().lower()[:160] or None
         phone = request.form.get("phone", "").strip()[:40]
+        contact_preference = request.form.get("contact_preference", "whatsapp").strip()
+        website_url = safe_external_url(request.form.get("website_url", "").strip())[:300]
+        social_url = safe_external_url(request.form.get("social_url", "").strip())[:300]
         password = request.form.get("password", "")
         identity_type = request.form.get("identity_type", "national_id").strip()
+        if contact_preference not in {"whatsapp", "call", "email", "website"}: contact_preference = "whatsapp"
         front_file = request.files.get("identity_front")
         back_file = request.files.get("identity_back")
         if role not in {"owner", "agent", "host", "business"}:
@@ -819,7 +1089,7 @@ def partner_register():
             flash(str(exc), "error")
             return render_template("partner_register.html", form=request.form)
         try:
-            cur = get_db().execute("INSERT INTO users(role,account_type,full_name,business_name,email,phone,password_hash,identity_type,identity_front,identity_back,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (role, role, full_name, business_name, email, phone, generate_password_hash(password), identity_type, front, back, now_iso()))
+            cur = get_db().execute("INSERT INTO users(role,account_type,full_name,business_name,email,phone,contact_preference,website_url,social_url,password_hash,identity_type,identity_front,identity_back,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (role, role, full_name, business_name, email, phone, contact_preference, website_url, social_url, generate_password_hash(password), identity_type, front, back, now_iso()))
         except sqlite3.IntegrityError:
             flash("That email address is already registered. Please sign in instead or use another email.", "error")
             return render_template("partner_register.html", form=request.form)
@@ -913,6 +1183,35 @@ def logout():
     return redirect(url_for("index"))
 
 
+@app.post("/partner/profile")
+@partner_required
+def partner_profile_update():
+    user = get_current_user()
+    phone = request.form.get("phone", "").strip()[:40]
+    email = request.form.get("email", "").strip().lower()[:160] or None
+    preference = request.form.get("contact_preference", "whatsapp").strip()
+    website = safe_external_url(request.form.get("website_url", "").strip())[:300]
+    social = safe_external_url(request.form.get("social_url", "").strip())[:300]
+    if preference not in {"whatsapp", "call", "email", "website"}: preference = "whatsapp"
+    if not phone:
+        flash("Add a phone number so people can contact you.", "error")
+        return redirect(url_for("partner_dashboard") + "#contact-profile")
+    if request.form.get("website_url", "").strip() and not website:
+        flash("Website URL must be a valid HTTP or HTTPS link.", "error")
+        return redirect(url_for("partner_dashboard") + "#contact-profile")
+    if request.form.get("social_url", "").strip() and not social:
+        flash("Social profile URL must be a valid HTTP or HTTPS link.", "error")
+        return redirect(url_for("partner_dashboard") + "#contact-profile")
+    try:
+        get_db().execute("UPDATE users SET phone=?,email=?,contact_preference=?,website_url=?,social_url=? WHERE id=?", (phone,email,preference,website,social,user["id"]))
+    except sqlite3.IntegrityError:
+        flash("That email is already associated with another account.", "error")
+        return redirect(url_for("partner_dashboard") + "#contact-profile")
+    audit("partner_contact_profile_updated", "user", user["id"])
+    flash("Your public contact options have been updated.", "success")
+    return redirect(url_for("partner_dashboard") + "#contact-profile")
+
+
 @app.route("/partner/dashboard")
 @partner_required
 def partner_dashboard():
@@ -963,6 +1262,7 @@ def partner_new_listing():
             return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
         floor_area = request.form.get("floor_area", "").strip()[:80]
         amenities = request.form.get("amenities", "").strip()[:1200]
+        water_quality = request.form.get("water_quality", "").strip()[:180]
         try:
             latitude = float(request.form.get("latitude", "").strip()) if request.form.get("latitude", "").strip() else None
             longitude = float(request.form.get("longitude", "").strip()) if request.form.get("longitude", "").strip() else None
@@ -991,9 +1291,9 @@ def partner_new_listing():
         fee = fee_for_category(category)
         payment_reference = request.form.get("payment_reference", "").strip()[:120]
         payment_status = "submitted" if payment_reference else "pending"
-        cur = get_db().execute("""INSERT INTO listings(owner_id,category,property_type,title,description,price_amount,price_period,deposit_amount,bedrooms,bathrooms,floor_area,amenities,location_name,landmarks,latitude,longitude,property_condition,images,status,approval_status,payment_status,payment_reference,fee_amount,posted_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','pending',?,?,?,?,?)""",
-            (user["id"], category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, floor_area, amenities, location_name, landmarks, latitude, longitude, property_condition, json.dumps(image_names), payment_status, payment_reference, fee, now_iso(), now_iso()))
+        cur = get_db().execute("""INSERT INTO listings(owner_id,category,property_type,title,description,price_amount,price_period,deposit_amount,bedrooms,bathrooms,floor_area,amenities,water_quality,location_name,landmarks,latitude,longitude,property_condition,images,status,approval_status,payment_status,payment_reference,fee_amount,posted_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','pending',?,?,?,?,?)""",
+            (user["id"], category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, floor_area, amenities, water_quality, location_name, landmarks, latitude, longitude, property_condition, json.dumps(image_names), payment_status, payment_reference, fee, now_iso(), now_iso()))
         listing_id = cur.lastrowid
         log_event("property_submitted", request.path, json.dumps({"listing_id": listing_id, "category": category}))
         audit("property_submitted", "listing", listing_id, f"Fee {fee}; payment reference supplied={bool(payment_reference)}")
@@ -1020,6 +1320,7 @@ def partner_edit_listing(listing_id):
         landmarks = request.form.get("landmarks", "").strip()[:1200]
         price_period = request.form.get("price_period", "per month").strip()
         condition = request.form.get("property_condition", "").strip()[:120]
+        water_quality = request.form.get("water_quality", row["water_quality"] or "").strip()[:180]
         if price_period not in PRICE_PERIODS: price_period = "per month"
         try:
             price_amount = float(request.form.get("price_amount", "0") or 0)
@@ -1059,8 +1360,8 @@ def partner_edit_listing(listing_id):
         elif row["payment_status"] == "paid":
             fee = float(row["fee_amount"])
         # Any substantive edit puts the property back into the review queue.
-        get_db().execute("""UPDATE listings SET category=?,property_type=?,title=?,description=?,price_amount=?,price_period=?,deposit_amount=?,bedrooms=?,bathrooms=?,floor_area=?,amenities=?,location_name=?,landmarks=?,latitude=?,longitude=?,property_condition=?,images=?,status='pending',approval_status='pending',payment_status=?,payment_reference=?,fee_amount=?,property_verified=0,last_confirmed_at='',updated_at=? WHERE id=? AND owner_id=?""",
-            (category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, request.form.get("floor_area", "").strip()[:80], request.form.get("amenities", "").strip()[:1200], location_name, landmarks, latitude, longitude, condition, json.dumps(names), payment_status, payment_reference, fee, now_iso(), listing_id, user["id"]))
+        get_db().execute("""UPDATE listings SET category=?,property_type=?,title=?,description=?,price_amount=?,price_period=?,deposit_amount=?,bedrooms=?,bathrooms=?,floor_area=?,amenities=?,water_quality=?,location_name=?,landmarks=?,latitude=?,longitude=?,property_condition=?,images=?,status='pending',approval_status='pending',payment_status=?,payment_reference=?,fee_amount=?,property_verified=0,last_confirmed_at='',updated_at=? WHERE id=? AND owner_id=?""",
+            (category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, request.form.get("floor_area", "").strip()[:80], request.form.get("amenities", "").strip()[:1200], water_quality, location_name, landmarks, latitude, longitude, condition, json.dumps(names), payment_status, payment_reference, fee, now_iso(), listing_id, user["id"]))
         audit("partner_edited_property", "listing", listing_id, "Listing returned to verification queue after edit")
         flash("Listing updated and returned to review. It stays private until the property is checked again. If its category changed, the new fee must be paid.", "success")
         return redirect(url_for("partner_dashboard"))
@@ -1139,6 +1440,7 @@ def admin_logout():
 @admin_required
 def admin_dashboard():
     conn = get_db()
+    day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     stats = {
         "listings": conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
         "published": conn.execute("SELECT COUNT(*) FROM listings WHERE status='available' AND approval_status='approved' AND payment_status='paid' AND property_verified=1").fetchone()[0],
@@ -1148,7 +1450,7 @@ def admin_dashboard():
         "partners_pending": conn.execute("SELECT COUNT(*) FROM users WHERE role IN ('owner','agent','host','business') AND verified=0 AND suspended=0").fetchone()[0],
         "interests": conn.execute("SELECT COUNT(*) FROM interests").fetchone()[0],
         "reports": conn.execute("SELECT COUNT(*) FROM reports WHERE status='open'").fetchone()[0],
-        "visitors_today": conn.execute("SELECT COUNT(DISTINCT visitor_key) FROM visitor_events WHERE event_type='page_view' AND created_at>=?", (datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0).isoformat(),)).fetchone()[0],
+        "visitors_today": conn.execute("SELECT COUNT(DISTINCT CASE WHEN v.contact_phone != '' THEN 'phone:' || v.contact_phone WHEN v.user_id IS NOT NULL THEN 'account:' || v.user_id ELSE 'browser:' || v.visitor_key END) FROM visitor_events e JOIN visitor_sessions v ON v.visitor_key=e.visitor_key WHERE e.event_type='page_view' AND e.details != 'administrator' AND e.path NOT LIKE ? AND e.path NOT LIKE '/manage-admin%' AND e.created_at>=?", (ADMIN_ROOT + '%', day_start)).fetchone()[0],
     }
     listings = conn.execute("SELECT l.*,u.full_name AS partner_name,u.business_name FROM listings l JOIN users u ON u.id=l.owner_id ORDER BY l.posted_at DESC LIMIT 8").fetchall()
     latest_events = conn.execute("SELECT * FROM visitor_events ORDER BY id DESC LIMIT 10").fetchall()
@@ -1165,11 +1467,67 @@ def admin_listings():
         clauses.append("l.status=?"); params.append(status)
     if category in CATEGORY_META:
         clauses.append("l.category=?"); params.append(category)
-    sql = "SELECT l.*,u.full_name AS partner_name,u.business_name,u.phone AS partner_phone,u.verified AS partner_verified FROM listings l JOIN users u ON l.owner_id=u.id"
+    sql = "SELECT l.*,u.full_name AS partner_name,u.business_name,u.phone AS partner_phone,u.email AS partner_email,u.contact_preference AS contact_preference,u.website_url AS website_url,u.social_url AS social_url,u.verified AS partner_verified FROM listings l JOIN users u ON l.owner_id=u.id"
     if clauses: sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY l.posted_at DESC LIMIT 300"
     listings = get_db().execute(sql, params).fetchall()
     return render_template("admin_listings.html", listings=listings, status=status, category=category)
+
+
+@app.route("/manage-admin/listings/<int:listing_id>/edit", methods=["GET", "POST"])
+@admin_required
+def admin_edit_listing(listing_id):
+    row = get_db().execute("SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
+    if not row: abort(404)
+    if request.method == "POST":
+        category = request.form.get("category", row["category"])
+        if category not in CATEGORY_META: category = row["category"]
+        property_type = request.form.get("property_type", "").strip()[:120]
+        title = request.form.get("title", "").strip()[:180]
+        description = request.form.get("description", "").strip()[:5000]
+        location_name = request.form.get("location_name", "").strip()[:180]
+        landmarks = request.form.get("landmarks", "").strip()[:1200]
+        condition = request.form.get("property_condition", "").strip()[:120]
+        water_quality = request.form.get("water_quality", "").strip()[:180]
+        price_period = request.form.get("price_period", "per month").strip()
+        if price_period not in PRICE_PERIODS: price_period = "per month"
+        try:
+            price_amount = float(request.form.get("price_amount", "0") or 0)
+            deposit_amount = float(request.form.get("deposit_amount", "") or 0)
+            bedrooms = int(request.form.get("bedrooms", "") or 0) or None
+            bathrooms = int(request.form.get("bathrooms", "") or 0) or None
+            latitude = float(request.form.get("latitude", "").strip()) if request.form.get("latitude", "").strip() else None
+            longitude = float(request.form.get("longitude", "").strip()) if request.form.get("longitude", "").strip() else None
+            if latitude is not None and not -90 <= latitude <= 90: raise ValueError()
+            if longitude is not None and not -180 <= longitude <= 180: raise ValueError()
+            if price_amount < 0 or deposit_amount < 0: raise ValueError()
+        except ValueError:
+            flash("Check the price, deposit, room and coordinate fields.", "error")
+            return redirect(url_for("admin_edit_listing", listing_id=listing_id))
+        if not title or not property_type or not location_name:
+            flash("Property title, type and location are required.", "error")
+            return redirect(url_for("admin_edit_listing", listing_id=listing_id))
+        images = listing_images(row)
+        additions = []
+        try:
+            for file in request.files.getlist("images")[:8]:
+                if file and file.filename:
+                    additions.append(save_upload(file, LISTING_UPLOAD_DIR, ALLOWED_IMAGE_EXTENSIONS))
+        except ValueError as exc:
+            for name in additions: (LISTING_UPLOAD_DIR / name).unlink(missing_ok=True)
+            flash(str(exc), "error")
+            return redirect(url_for("admin_edit_listing", listing_id=listing_id))
+        images = (images + additions)[-8:]
+        changed_category = category != row["category"]
+        payment_status = "pending" if changed_category else row["payment_status"]
+        payment_reference = "" if changed_category else row["payment_reference"]
+        fee_amount = fee_for_category(category) if changed_category else float(row["fee_amount"])
+        get_db().execute("""UPDATE listings SET category=?,property_type=?,title=?,description=?,price_amount=?,price_period=?,deposit_amount=?,bedrooms=?,bathrooms=?,floor_area=?,amenities=?,water_quality=?,location_name=?,landmarks=?,latitude=?,longitude=?,property_condition=?,images=?,status='pending',approval_status='pending',payment_status=?,payment_reference=?,fee_amount=?,property_verified=0,last_confirmed_at='',updated_at=? WHERE id=?""",
+            (category,property_type,title,description,price_amount,price_period,deposit_amount,bedrooms,bathrooms,request.form.get("floor_area", "").strip()[:80],request.form.get("amenities", "").strip()[:1200],water_quality,location_name,landmarks,latitude,longitude,condition,json.dumps(images),payment_status,payment_reference,fee_amount,now_iso(),listing_id))
+        audit("admin_edited_listing", "listing", listing_id, "Listing returned to verification after admin edit")
+        flash("Property updated. It is in the review queue and will be republished only after the required checks pass.", "success")
+        return redirect(url_for("admin_listings"))
+    return render_template("admin_listing_edit.html", listing=row, form=dict(row), categories=CATEGORY_META, price_periods=PRICE_PERIODS, existing_images=listing_images(row))
 
 
 @app.post("/manage-admin/listings/<int:listing_id>/action")
@@ -1220,6 +1578,15 @@ def admin_listing_action(listing_id):
         get_db().execute("UPDATE listings SET status='removed',approval_status='rejected',updated_at=? WHERE id=?", (now_iso(), listing_id))
         audit("listing_removed", "listing", listing_id, request.form.get("reason", "")[:500])
         flash("Listing removed from public results. Its history has been retained.", "success")
+    elif action == "delete_permanently":
+        for filename in listing_images(row):
+            (LISTING_UPLOAD_DIR / filename).unlink(missing_ok=True)
+        audit("listing_deleted_permanently", "listing", listing_id, f"Title={row['title'][:160]}")
+        get_db().execute("DELETE FROM interests WHERE listing_id=?", (listing_id,))
+        get_db().execute("DELETE FROM reports WHERE listing_id=?", (listing_id,))
+        get_db().execute("DELETE FROM ratings WHERE listing_id=?", (listing_id,))
+        get_db().execute("DELETE FROM listings WHERE id=?", (listing_id,))
+        flash("Property permanently deleted along with its listing-level enquiries and ratings.", "success")
     else:
         flash("Unknown listing action.", "error")
     return redirect(url_for("admin_listings"))
@@ -1334,16 +1701,40 @@ def admin_report_action(report_id):
 @admin_required
 def admin_analytics():
     conn = get_db()
-    sessions = conn.execute("SELECT v.*,u.full_name,u.business_name FROM visitor_sessions v LEFT JOIN users u ON v.user_id=u.id ORDER BY v.last_seen DESC LIMIT 250").fetchall()
-    top_pages = conn.execute("SELECT path,COUNT(*) AS hits,COUNT(DISTINCT visitor_key) AS visitors FROM visitor_events WHERE event_type='page_view' GROUP BY path ORDER BY hits DESC LIMIT 15").fetchall()
-    search_rows = conn.execute("SELECT details,created_at FROM visitor_events WHERE event_type='property_search' ORDER BY id DESC LIMIT 30").fetchall()
+    sessions = conn.execute("SELECT v.*,COALESCE(NULLIF(u.full_name,''),NULLIF(v.contact_name,'')) AS full_name,u.business_name,COALESCE(NULLIF(u.phone,''),NULLIF(v.contact_phone,'')) AS account_phone FROM visitor_sessions v LEFT JOIN users u ON v.user_id=u.id WHERE v.role != 'administrator' ORDER BY v.last_seen DESC LIMIT 250").fetchall()
+    top_pages = conn.execute("SELECT e.path,COUNT(*) AS hits,COUNT(DISTINCT CASE WHEN v.contact_phone != '' THEN 'phone:' || v.contact_phone WHEN v.user_id IS NOT NULL THEN 'account:' || v.user_id ELSE 'browser:' || v.visitor_key END) AS visitors FROM visitor_events e JOIN visitor_sessions v ON v.visitor_key=e.visitor_key WHERE e.event_type='page_view' AND e.details != 'administrator' AND e.path NOT LIKE '/manage-admin%' AND e.path NOT LIKE ? GROUP BY e.path ORDER BY hits DESC LIMIT 15", (ADMIN_ROOT + '%',)).fetchall()
+    search_events = conn.execute("SELECT details,created_at FROM visitor_events WHERE event_type='property_search' ORDER BY id DESC LIMIT 1500").fetchall()
+    popular_counter, failed_counter = Counter(), Counter()
+    popular_meta, failed_meta = {}, {}
+    for event in search_events:
+        try:
+            data = json.loads(event["details"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        parts = [str(data.get(k, "")).strip() for k in ("q", "location", "category", "type") if str(data.get(k, "")).strip()]
+        query_label = " · ".join(parts) or "Browse all places"
+        normalized = re.sub(r"\s+", " ", query_label.casefold()).strip()
+        popular_counter[normalized] += 1
+        popular_meta[normalized] = {"label": query_label, "latest": event["created_at"], "count": data.get("count", 0)}
+        if bool(data.get("no_match")) or int(data.get("count", 0) or 0) == 0:
+            failed_counter[normalized] += 1
+            failed_meta[normalized] = {"label": query_label, "latest": event["created_at"]}
+    popular_searches = [{"label": popular_meta[key]["label"], "searches": count, "latest": popular_meta[key]["latest"], "last_count": popular_meta[key]["count"]} for key, count in popular_counter.most_common(12)]
+    failed_searches = [{"label": failed_meta[key]["label"], "searches": count, "latest": failed_meta[key]["latest"]} for key, count in failed_counter.most_common(12)]
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    active_after = (now - timedelta(minutes=15)).isoformat()
     totals = {
-        "sessions": conn.execute("SELECT COUNT(*) FROM visitor_sessions").fetchone()[0],
-        "shared": conn.execute("SELECT COUNT(*) FROM visitor_sessions WHERE location_shared=1").fetchone()[0],
-        "today": conn.execute("SELECT COUNT(DISTINCT visitor_key) FROM visitor_events WHERE event_type='page_view' AND created_at>=?", (datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0).isoformat(),)).fetchone()[0],
+        "sessions": conn.execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator'").fetchone()[0],
+        "returning": conn.execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions v WHERE role != 'administrator' AND (visit_count>1 OR (contact_phone != '' AND contact_phone IN (SELECT contact_phone FROM visitor_sessions WHERE contact_phone != '' GROUP BY contact_phone HAVING COUNT(*)>1)) OR (user_id IS NOT NULL AND user_id IN (SELECT user_id FROM visitor_sessions WHERE user_id IS NOT NULL GROUP BY user_id HAVING COUNT(*)>1)))").fetchone()[0],
+        "shared": conn.execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator' AND location_shared=1").fetchone()[0],
+        "today": conn.execute("SELECT COUNT(DISTINCT CASE WHEN v.contact_phone != '' THEN 'phone:' || v.contact_phone WHEN v.user_id IS NOT NULL THEN 'account:' || v.user_id ELSE 'browser:' || v.visitor_key END) FROM visitor_events e JOIN visitor_sessions v ON v.visitor_key=e.visitor_key WHERE e.event_type='page_view' AND e.details != 'administrator' AND e.path NOT LIKE ? AND e.path NOT LIKE '/manage-admin%' AND e.created_at>=?", (ADMIN_ROOT + '%', day_start)).fetchone()[0],
+        "active": conn.execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator' AND last_seen>=?", (active_after,)).fetchone()[0],
+        "mobile": conn.execute("SELECT COUNT(DISTINCT CASE WHEN contact_phone != '' THEN 'phone:' || contact_phone WHEN user_id IS NOT NULL THEN 'account:' || user_id ELSE 'browser:' || visitor_key END) FROM visitor_sessions WHERE role != 'administrator' AND (device LIKE '%phone%' OR device LIKE '%Mobile%' OR device LIKE '%iPhone%' OR device LIKE '%iPad%' OR device LIKE '%Android%')").fetchone()[0],
+        "searches": conn.execute("SELECT COUNT(*) FROM visitor_events WHERE event_type='property_search'").fetchone()[0],
+        "no_results": sum(failed_counter.values()),
     }
-    return render_template("admin_analytics.html", sessions=sessions, top_pages=top_pages, search_rows=search_rows, totals=totals)
-
+    return render_template("admin_analytics.html", sessions=sessions, top_pages=top_pages, popular_searches=popular_searches, failed_searches=failed_searches, totals=totals)
 
 @app.post("/api/location")
 def save_opt_in_location():
@@ -1357,7 +1748,7 @@ def save_opt_in_location():
         return jsonify({"ok": False, "error": "Coordinates were not valid."}), 400
     # Keep approximate neighborhood-level coordinates, not a precise movement history.
     lat = round(lat, 3); lon = round(lon, 3)
-    key = session.get("visitor_key", "")
+    key = current_visitor_key()
     user = get_current_user()
     conn = get_db()
     exists = conn.execute("SELECT visitor_key FROM visitor_sessions WHERE visitor_key=?", (key,)).fetchone()
@@ -1374,6 +1765,33 @@ def save_opt_in_location():
 @admin_required
 def admin_settings():
     if request.method == "POST":
+        logo_file = request.files.get("logo_file")
+        if logo_file and logo_file.filename:
+            try:
+                logo_name = save_upload(logo_file, BRANDING_DIR, ALLOWED_IMAGE_EXTENSIONS)
+                old_logo = setting("site_logo", "")
+                set_setting("site_logo", logo_name)
+                if old_logo and old_logo != logo_name and Path(old_logo).name == old_logo:
+                    (BRANDING_DIR / old_logo).unlink(missing_ok=True)
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("admin_settings"))
+        promo_file = request.files.get("promo_image_file")
+        if promo_file and promo_file.filename:
+            try:
+                promo_name = save_upload(promo_file, PROMO_DIR, ALLOWED_IMAGE_EXTENSIONS)
+                old_promo = setting("promo_image", "")
+                set_setting("promo_image", promo_name)
+                if old_promo and old_promo != promo_name and Path(old_promo).name == old_promo:
+                    (PROMO_DIR / old_promo).unlink(missing_ok=True)
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("admin_settings"))
+        if request.form.get("remove_promo_image"):
+            old_promo = setting("promo_image", "")
+            set_setting("promo_image", "")
+            if old_promo and Path(old_promo).name == old_promo:
+                (PROMO_DIR / old_promo).unlink(missing_ok=True)
         allowed_keys = set(DEFAULT_SETTINGS.keys())
         for key in allowed_keys:
             if key.endswith("_enabled"):
@@ -1387,6 +1805,12 @@ def admin_settings():
                 return redirect(url_for("admin_settings"))
             if key == "management_url" and value and not safe_external_url(value):
                 flash("Management URL must begin with https:// or http:// and include a valid host.", "error")
+                return redirect(url_for("admin_settings"))
+            if key == "promo_link" and value and not safe_external_url(value):
+                flash("Campaign destination must be a valid http:// or https:// URL.", "error")
+                return redirect(url_for("admin_settings"))
+            if key == "promo_video_url" and value and not safe_video_embed_url(value):
+                flash("Video must be a public YouTube or Vimeo link.", "error")
                 return redirect(url_for("admin_settings"))
             if key == "public_base_url" and value and not safe_external_url(value):
                 flash("Public base URL must begin with https:// or http:// and include a valid host.", "error")
@@ -1542,6 +1966,17 @@ def listing_media(filename):
     return response
 
 
+@app.route("/branding/<path:filename>")
+def branding_media(filename):
+    if Path(filename).name != filename or Path(filename).suffix.lower().lstrip(".") not in ALLOWED_IMAGE_EXTENSIONS:
+        abort(404)
+    if not (BRANDING_DIR / filename).is_file() or setting("site_logo", "") != filename:
+        abort(404)
+    response = send_from_directory(BRANDING_DIR, filename, max_age=86400)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @app.route("/qr/platform.png")
 def qr_platform():
     url = public_base() + "/"
@@ -1559,21 +1994,39 @@ def qr_response(url: str, filename: str):
     from io import BytesIO
     qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=3)
     qr.add_data(url); qr.make(fit=True)
-    image = qr.make_image(fill_color="#163D31", back_color="#FFFFFF")
+    image = qr.make_image(fill_color="#283A62", back_color="#FFFFFF")
     out = BytesIO(); image.save(out, format="PNG"); out.seek(0)
     return send_file(out, mimetype="image/png", download_name=f"{filename}.png", max_age=3600)
+
+
+@app.route("/promo-media/<path:filename>")
+def promo_media(filename):
+    if Path(filename).name != filename or setting("promo_image", "") != filename:
+        abort(404)
+    path = PROMO_DIR / filename
+    if not path.is_file():
+        abort(404)
+    response = send_from_directory(PROMO_DIR, filename, max_age=86400)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/manifest.webmanifest")
 def manifest():
     from flask import Response
+    uploaded_logo = setting("site_logo", "")
+    if uploaded_logo:
+        logo_src = url_for("branding_media", filename=uploaded_logo)
+        logo_type = "image/webp" if uploaded_logo.lower().endswith(".webp") else "image/png" if uploaded_logo.lower().endswith(".png") else "image/jpeg"
+    else:
+        logo_src, logo_type = url_for("icon_svg"), "image/svg+xml"
     body = {
         "name": setting("site_name", "PataMahali"),
         "short_name": setting("site_name", "PataMahali")[:12],
         "description": setting("site_description", "Verified property marketplace"),
         "start_url": "/", "scope": "/", "display": "standalone",
-        "background_color": "#f8f7f1", "theme_color": setting("brand_primary", "#176B4D"),
-        "icons": [{"src": url_for("icon_svg"), "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}],
+        "background_color": "#F6F7FA", "theme_color": setting("brand_primary", "#283A62"),
+        "icons": [{"src": logo_src, "sizes": "any", "type": logo_type}],
     }
     return app.response_class(json.dumps(body), mimetype="application/manifest+json")
 

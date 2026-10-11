@@ -1,23 +1,58 @@
 {% extends 'base.html' %}
 {% block title %}Find a place · {{ site_settings.get('site_name','PataMahali') }}{% endblock %}
+{% block meta_description %}Search houses, stays and commercial property by location, type and realistic budget.{% endblock %}
 {% block content %}
-<section class="page-shell page-heading-block"><div><span class="eyebrow">Search marketplace</span><h1>Find the right place</h1><p>Compare location, price and property details before arranging a visit.</p></div><span class="result-total">{{ listings|length }} result{{ '' if listings|length == 1 else 's' }}</span></section>
-<section class="page-shell search-layout">
-  <aside class="filter-panel"><div class="filter-heading"><h2>Refine search</h2><a href="{{ url_for('homes') }}" class="text-link small">Clear</a></div>
-    <form action="{{ url_for('homes') }}" method="get" class="filter-form">
-      <label>Search words<input type="search" name="q" value="{{ q }}" placeholder="House name, estate, feature"></label>
-      <label>Category<select name="category"><option value="">All categories</option>{% for key,meta in category_meta.items() %}<option value="{{ key }}" {% if category==key %}selected{% endif %}>{{ meta['label'] }}</option>{% endfor %}</select></label>
-      {% if category in category_meta %}<label>Property type<select name="type"><option value="">Any type</option>{% for typ in types %}<option value="{{ typ }}" {% if property_type==typ %}selected{% endif %}>{{ typ }}</option>{% endfor %}</select></label>{% endif %}
-      <label>Area / landmark<input name="location" value="{{ location }}" placeholder="e.g. Ruaka, near stage"></label>
-      <label>Maximum price (KES)<input type="number" name="max_price" value="{{ max_price }}" min="0" step="100" placeholder="No maximum"></label>
-      <label>Bedrooms at least<select name="bedrooms"><option value="">Any</option>{% for num in [1,2,3,4,5] %}<option value="{{ num }}" {% if bedrooms|string==num|string %}selected{% endif %}>{{ num }}+</option>{% endfor %}</select></label>
-      <button class="button button-primary button-wide" type="submit">Update results</button>
-    </form>
-    <div class="location-share-box"><div class="location-share-icon">⌖</div><strong>Search near you</strong><p>Only share location when you choose. The site stores an approximate area for this visit and shows that sharing to authorized administrators.</p><button type="button" class="button button-outline button-wide use-location" data-location-search>Use my location</button><span class="small muted" data-location-status aria-live="polite"></span></div>
-  </aside>
-  <div class="results-column">
-    <div class="results-toolbar"><div><strong>{{ listings|length }} matching places</strong>{% if sorted_by_distance %}<span class="nearby-badge">Sorted near your location</span>{% endif %}</div><span class="muted small">Only approved, paid and property-checked listings appear.</span></div>
-    {% if listings %}<div class="property-grid">{% for item in listings %}{% include '_listing_card.html' %}{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">⌕</div><h3>No matching places yet</h3><p>Try a nearby estate, a wider price range or a different property category. We do not fill search results with unverified adverts.</p><a class="button button-outline" href="{{ url_for('homes') }}">Clear filters</a></div>{% endif %}
+<section class="page-shell search-page-intro"><div><span class="eyebrow">Discover</span><h1>Find a place that fits.</h1><p>Real details. Clear prices. Better directions.</p></div><span class="search-result-count">{{ listings|length }} match{{ '' if listings|length==1 else 'es' }}</span></section>
+<section class="page-shell search-command-panel">
+  <form action="{{ url_for('homes') }}" method="get" class="search-command-form" id="houseSearchForm">
+    <label class="search-field search-wide">House, place or feature<input type="search" name="q" value="{{ q }}" placeholder="e.g. 2 bedroom, balcony, near a stage" autocomplete="off"></label>
+    <label class="search-field">Category<select name="category" id="searchCategory"><option value="">All places</option>{% for key,meta in category_meta.items() %}<option value="{{ key }}" {% if category==key %}selected{% endif %}>{{ meta['label'] }}</option>{% endfor %}</select></label>
+    <label class="search-field">Property type<select name="type" id="searchType"><option value="">Any type</option>{% for typ in types %}<option value="{{ typ }}" {% if property_type==typ %}selected{% endif %}>{{ typ }}</option>{% endfor %}</select></label>
+    <label class="search-field search-wide">Area you want to move to<input name="location" value="{{ location }}" placeholder="e.g. Ruaka, Roysambu, Nairobi CBD" autocomplete="address-level2"></label>
+    <fieldset class="budget-fieldset"><legend>Budget (KES)</legend><div class="budget-inputs"><label><span>Minimum</span><input type="number" name="min_price" value="{{ min_price }}" min="0" step="100" placeholder="Any"></label><span class="budget-dash">—</span><label><span>Maximum</span><input type="number" name="max_price" value="{{ max_price }}" min="0" step="100" placeholder="Any"></label></div><button class="budget-flex-button" type="button" data-budget-flex>Include a little above and below</button></fieldset>
+    <div class="search-command-actions"><button class="button button-primary search-submit" type="submit">Find places</button><a class="search-reset" href="{{ url_for('homes') }}">Reset</a></div>
+  </form>
+  <div class="nearby-search-row"><span class="nearby-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span><div><strong>Use your current location</strong><span>Optional · sort nearby properties first</span></div><button type="button" class="button button-outline location-button" data-location-search>Use my location</button><span class="location-status" data-location-status aria-live="polite"></span></div>
+</section>
+{% if site_settings.get('promo_enabled','0') == '1' and (site_settings.get('promo_title') or site_settings.get('promo_text') or site_settings.get('promo_image') or promo_embed_url) %}
+<section class="page-shell promotion-placement" aria-label="Featured message">
+  <div class="promotion-panel">
+    {% if promo_embed_url %}<div class="promotion-media promotion-video"><iframe src="{{ promo_embed_url }}" title="{{ site_settings.get('promo_title') or 'Featured message' }}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>{% elif site_settings.get('promo_image') %}<div class="promotion-media"><img src="{{ url_for('promo_media', filename=site_settings.get('promo_image')) }}" alt="{{ site_settings.get('promo_title') or 'Featured message' }}" loading="lazy"></div>{% endif %}
+    <div class="promotion-copy"><span class="promotion-label">Featured</span>{% if site_settings.get('promo_title') %}<h2>{{ site_settings.get('promo_title') }}</h2>{% endif %}{% if site_settings.get('promo_text') %}<p>{{ site_settings.get('promo_text') }}</p>{% endif %}{% if site_settings.get('promo_link') %}<a class="button button-outline promotion-link" href="{{ site_settings.get('promo_link') }}" target="_blank" rel="noopener noreferrer">{{ site_settings.get('promo_link_label') or 'Learn more' }} <span aria-hidden="true">↗</span></a>{% endif %}</div>
   </div>
 </section>
+{% endif %}
+<section class="page-shell results-section">
+  <div class="results-toolbar"><div><strong>{{ listings|length }} places</strong>{% if sorted_by_distance %}<span class="nearby-badge">Nearest first</span>{% endif %}{% if fuzzy_used %}<span class="close-match-note">Close spelling matches</span>{% endif %}</div><span class="results-online-note">Availability is checked on each listing.</span></div>
+  {% if listings %}<div class="property-grid">{% for item in listings %}{% include '_listing_card.html' %}{% endfor %}</div>
+  {% else %}<div class="search-empty-state"><div class="empty-signal" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><circle cx="21" cy="21" r="12" stroke="currentColor" stroke-width="2"/><path d="m30 30 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 21h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><h2>No exact matches yet</h2><p>Try a nearby area, a wider budget or a simpler spelling.</p><a class="button button-outline" href="{{ url_for('homes') }}">Start a new search</a></div>{% endif %}
+</section>
+<script>
+(() => {
+  const category = document.getElementById('searchCategory');
+  const type = document.getElementById('searchType');
+  const categories = {{ category_meta|tojson }};
+  const selectedType = {{ property_type|tojson }};
+  function refreshTypes(keep) {
+    const chosen = keep ? (type.value || selectedType) : '';
+    const key = category.value;
+    const available = key && categories[key] ? categories[key].types : Array.from(new Set(Object.values(categories).flatMap(c => c.types || [])));
+    type.innerHTML = '<option value="">Any type</option>';
+    (available || []).forEach(label => { const opt = document.createElement('option'); opt.value = label; opt.textContent = label; opt.selected = label === chosen; type.appendChild(opt); });
+  }
+  category.addEventListener('change', () => refreshTypes(false));
+  if (!type.options.length || (category.value && !Array.from(type.options).some(x => x.value === selectedType))) refreshTypes(true);
+  const flex = document.querySelector('[data-budget-flex]');
+  if (flex) flex.addEventListener('click', () => {
+    const low = document.querySelector('[name="min_price"]'); const high = document.querySelector('[name="max_price"]');
+    const min = low.value.trim() ? Number(low.value) : (high.value.trim() ? Number(high.value) * .8 : 0);
+    const max = high.value.trim() ? Number(high.value) : (low.value.trim() ? Number(low.value) * 1.25 : 0);
+    if (low.value.trim() || high.value.trim()) {
+      low.value = Math.max(0, Math.floor(min * .9 / 100) * 100) || '';
+      high.value = Math.ceil(max * 1.1 / 100) * 100 || '';
+      flex.textContent = 'Budget widened';
+    } else { flex.textContent = 'Add a minimum or maximum first'; }
+  });
+})();
+</script>
 {% endblock %}

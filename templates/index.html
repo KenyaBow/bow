@@ -1,50 +1,38 @@
 {% extends 'base.html' %}
-{% block title %}{{ site_settings.get('site_name','PataMahali') }} · Find your next place{% endblock %}
-{% block meta_description %}{{ site_settings.get('site_description','Discover homes, stays and commercial spaces with clear, accountable property listings.') }}{% endblock %}
-{% block head %}
-<meta name="robots" content="index,follow">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-{% endblock %}
+{% block title %}{{ site_settings.get('site_name','PataMahali') }} · Find the right place{% endblock %}
+{% block meta_description %}{{ site_settings.get('site_description','Explore homes, stays and commercial properties with clear details and accountable listings.') }}{% endblock %}
+{% block head %}<meta name="robots" content="index,follow"><meta property="og:title" content="{{ site_settings.get('site_name','PataMahali')|e }}"><meta property="og:description" content="{{ site_settings.get('tagline','Find the right place.')|e }}">{% endblock %}
 {% block content %}
 <section class="entry-page" aria-labelledby="entry-title">
-  <div class="entry-glow entry-glow-one" aria-hidden="true"></div>
-  <div class="entry-glow entry-glow-two" aria-hidden="true"></div>
+  <div class="entry-atmosphere entry-atmosphere-a" aria-hidden="true"></div><div class="entry-atmosphere entry-atmosphere-b" aria-hidden="true"></div>
   <div class="entry-content">
     <a class="entry-brand" href="{{ url_for('index') }}" aria-label="{{ site_settings.get('site_name','PataMahali') }} home">
-      <span class="entry-brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none"><path d="M8 22.5 24 9l16 13.5V39H8V22.5Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M19 39V27h10v12M15 23h.01M33 23h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-      </span>
+      <span class="entry-brand-mark">{% if site_settings.get('site_logo') %}<img src="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}" alt="" width="42" height="42">{% else %}<img src="{{ url_for('icon_svg') }}" alt="" width="42" height="42">{% endif %}</span>
       <span>{{ site_settings.get('site_name','PataMahali') }}</span>
     </a>
-    <div class="entry-intro">
-      <span class="entry-kicker"><span class="entry-kicker-dot"></span> A better way to find your place</span>
-      <h1 id="entry-title">Welcome to <span>{{ site_settings.get('site_name','PataMahali') }}</span></h1>
-      <p>{{ site_settings.get('tagline','Find the right place, with confidence.') }}</p>
-    </div>
+    <div class="entry-intro"><span class="entry-kicker">A clearer way to find your place</span><h1 id="entry-title">Welcome to <span>{{ site_settings.get('site_name','PataMahali') }}</span></h1><p>{{ site_settings.get('tagline','Find the right place, with confidence.') }}</p></div>
     <div class="entry-gates">
-      <a class="entry-gate gate-seeker" href="{{ url_for('homes') }}">
-        <span class="gate-number">01 <span>· DISCOVER</span></span>
-        <span class="gate-icon" aria-hidden="true"><svg viewBox="0 0 52 52" fill="none"><path d="M9 23 26 9l17 14v20H9V23Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M21 43V29h10v14M16 23h.01M36 23h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="39" cy="13" r="7" fill="currentColor"/><path d="m36 13 2 2 4-4" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <span class="gate-copy"><strong>Find a place</strong><small>Explore homes, stays, shops and spaces.</small></span>
-        <span class="gate-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19 19 5M7 5h12v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <a class="entry-gate gate-seeker" href="{{ url_for('homes') }}" aria-label="Find a place and explore listings">
+        <span class="gate-number">01 <span>EXPLORE</span></span>
+        <span class="gate-photo"><img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85" alt="Modern residential home exterior" fetchpriority="high"></span>
+        <span class="gate-copy"><strong>Find a place</strong><small>Homes, stays, shops and spaces.</small></span><span class="gate-arrow" aria-hidden="true">↗</span>
       </a>
-      <a class="entry-gate gate-owner" href="{{ url_for('partner_register') }}">
-        <span class="gate-number">02 <span>· PARTNER</span></span>
-        <span class="gate-icon" aria-hidden="true"><svg viewBox="0 0 52 52" fill="none"><path d="M7 44V19L26 8l19 11v25H7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M17 44V29h18v15M16 21h.01M26 21h.01M36 21h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 14V8h12v13" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
-        <span class="gate-copy"><strong>List a property</strong><small>For owners and authorized agents.</small></span>
-        <span class="gate-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19 19 5M7 5h12v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <a class="entry-gate gate-owner" href="{% if current_user and current_user['role'] in ['owner','agent','host','business'] %}{{ url_for('partner_dashboard') }}{% else %}{{ url_for('partner_register') }}{% endif %}" aria-label="List a property as an owner or agent">
+        <span class="gate-number">02 <span>FOR PROPERTY PARTNERS</span></span>
+        <span class="gate-photo"><img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85" alt="Bright, carefully designed property interior" loading="eager"></span>
+        <span class="gate-copy"><strong>List a property</strong><small>For owners and authorized agents.</small></span><span class="gate-arrow" aria-hidden="true">↗</span>
       </a>
     </div>
-    <div class="entry-footline"><span>Clear details. Accountable partners.</span><span class="entry-reach"><span class="reach-dot"></span><strong data-count-up="{{ visitor_count|int }}">{{ visitor_count|int }}</strong> visits so far</span></div>
+    <div class="entry-bottom-row">
+      {% if site_settings.get('show_visitor_counter_enabled','1') == '1' %}<div class="entry-reach"><span class="reach-dot" aria-hidden="true"></span><strong data-count-up="{{ visitor_count|int }}">{{ visitor_count|int }}</strong><span>unique browsers reached</span></div>{% endif %}
+      {% if site_settings.get('show_landing_qr_enabled','1') == '1' %}<div class="entry-invite-card"><img src="{{ url_for('qr_platform') }}" alt="QR code to open {{ site_settings.get('site_name','PataMahali') }}" width="72" height="72"><div><strong>Invite someone</strong><span>Scan to open this marketplace.</span><button type="button" class="entry-copy-link" data-copy-url="{{ invite_url }}">Copy invite link</button></div></div>{% endif %}
+    </div>
   </div>
-  <div class="entry-corner entry-corner-top" aria-hidden="true"></div>
-  <div class="entry-corner entry-corner-bottom" aria-hidden="true"></div>
 </section>
 <script>
-(function(){
-  const counter=document.querySelector('[data-count-up]');
-  if(counter){const target=Math.max(0,Number(counter.dataset.countUp)||0); if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches && target>0){const start=performance.now(),duration=650;function tick(now){const p=Math.min(1,(now-start)/duration);counter.textContent=Math.round(target*(1-Math.pow(1-p,3))).toLocaleString();if(p<1)requestAnimationFrame(tick)}counter.textContent='0';requestAnimationFrame(tick)}}
+(() => {
+ const counter=document.querySelector('[data-count-up]');
+ if(counter){const target=Math.max(0,Number(counter.dataset.countUp)||0);const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;if(!reduce&&target>0){const start=performance.now(),duration=900;function tick(now){const p=Math.min(1,(now-start)/duration);counter.textContent=Math.round(target*(1-Math.pow(1-p,3))).toLocaleString();if(p<1)requestAnimationFrame(tick)}counter.textContent='0';requestAnimationFrame(tick)}}
 })();
 </script>
 {% endblock %}

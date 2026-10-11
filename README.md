@@ -10,8 +10,10 @@ A responsive Flask + SQLite marketplace starter for rental homes, short stays, s
 - Configurable category listing charges. A payment reference does **not** itself count as verified payment. An administrator must reconcile it, verify the partner, and separately approve/check the property before it can publish.
 - `Visit my management` button on the partner pages. Admin can connect it under Site & Fees; when no URL is configured, it opens a friendly placeholder page.
 - Admin entry path is hard-coded at `/promise212324`. Admin tools cover listings, payment confirmation, verification, partner accounts, enquiries, taken-listing reports, settings, traffic analytics, and full SQLite download/restore.
-- Explicit opt-in device location for nearby sorting. Only approximate coordinates rounded to three decimal places are stored for visitor analytics; no IP addresses are stored. Anonymous visits appear as browser sessions, not verified real-world people.
-- Platform and property QR codes, manifest, installable PWA shell with cache version refresh, offline fallback warning, dynamic sitemap and robots.txt. The landing counter animates to the actual recorded visit total; it does not fabricate visitors.
+- Explicit opt-in device location for nearby sorting. Only approximate coordinates rounded to three decimal places are stored for visitor analytics; no IP addresses are stored. Browsers do not reveal a phone number automatically: deduplication uses the browser key, and a provided/registered phone or account can reconcile visits across browsers.
+- Platform and property QR codes, configurable public logo (including favicon/PWA branding), manifest, installable PWA shell with cache version refresh, offline fallback warning, dynamic sitemap and robots.txt. The landing counter gently animates to the recorded unique browser/account/voluntarily provided phone total; it does not fabricate visitors.
+- Optional campaign placement inside search results, managed from Site & Fees: image, short message, destination link, or a safely embedded public YouTube/Vimeo video. It never turns the two-choice welcome screen into a pop-up.
+- Typo-tolerant search fallback for likely spelling mistakes, budget widening, optional GPS-nearby sorting, in-page route preview and turn-by-turn Google Maps directions from current location or a typed landmark.
 - SQLite snapshot backups, daily automatic snapshots (14 retained), manual backup creation, download, and validated restore with a safety backup first.
 
 ## Local run

@@ -58,29 +58,29 @@
   document.querySelectorAll('[data-location-search]').forEach((button) => {
     button.addEventListener('click', () => {
       const status = document.querySelector('[data-location-status]');
-      if (!navigator.geolocation) { if (status) status.textContent = 'This browser does not support device location.'; return; }
-      const accepted = window.confirm('Share your approximate location for nearby-place sorting? The platform stores a rounded area for this visit, visible to authorized administrators. You can cancel and search by area instead.');
-      if (!accepted) { if (status) status.textContent = 'No location shared. You can search by town or estate instead.'; return; }
+      if (!navigator.geolocation) { if (status) status.textContent = 'This browser does not support device location. Search by area instead.'; return; }
       button.disabled = true; button.textContent = 'Finding location…';
-      if (status) status.textContent = 'Waiting for your device permission…';
+      if (status) status.textContent = 'Your browser will ask permission to use your location.';
       navigator.geolocation.getCurrentPosition(async (position) => {
         try {
-          await postLocation(position.coords.latitude, position.coords.longitude);
+          // The visitor has explicitly pressed “Use my location”. Browser permission is the consent gate.
+          // Save only the approximate rounded location for the admin's consent-based analytics.
+          await postLocation(position.coords.latitude, position.coords.longitude).catch(() => {});
           const url = new URL(window.location.href);
           url.pathname = '/homes';
-          url.searchParams.set('lat', position.coords.latitude);
-          url.searchParams.set('lon', position.coords.longitude);
-          if (status) status.textContent = 'Location shared. Sorting results nearby…';
+          url.searchParams.set('lat', position.coords.latitude.toFixed(6));
+          url.searchParams.set('lon', position.coords.longitude.toFixed(6));
+          if (status) status.textContent = 'Location found. Showing nearby places first…';
           window.location.href = url.toString();
         } catch (error) {
-          if (status) status.textContent = error.message || 'Could not save location.';
+          if (status) status.textContent = error.message || 'Could not use this location. Search by area instead.';
           button.disabled = false; button.textContent = 'Use my location';
         }
       }, (error) => {
-        const messages = {1: 'Location permission was denied. You can search by area instead.', 2: 'Your location is unavailable. Try again or search by area.', 3: 'Location request timed out. Try again.'};
+        const messages = {1: 'Location permission was denied. Search by area instead.', 2: 'Your location is unavailable. Try again or search by area.', 3: 'Location request timed out. Try again.'};
         if (status) status.textContent = messages[error.code] || 'Location could not be read.';
         button.disabled = false; button.textContent = 'Use my location';
-      }, {enableHighAccuracy: false, timeout: 12000, maximumAge: 60000});
+      }, {enableHighAccuracy: false, timeout: 20000, maximumAge: 120000});
     });
   });
 
@@ -113,33 +113,56 @@
     const goButton = panel.querySelector('[data-route-go]');
     const status = panel.querySelector('[data-route-status]');
     const destination = panel.dataset.destination;
+    const preview = panel.querySelector('[data-route-map-preview]');
+    const frame = panel.querySelector('[data-route-map-frame]');
+    const openLink = panel.querySelector('[data-route-open]');
     const syncMode = () => { if (originInput) originInput.hidden = !mode || mode.value !== 'place'; };
     if (mode) { mode.addEventListener('change', syncMode); syncMode(); }
     if (!goButton || !destination) return;
+
+    const showRoute = (origin, originLabel) => {
+      const embed = 'https://maps.google.com/maps?saddr=' + encodeURIComponent(origin) + '&daddr=' + encodeURIComponent(destination) + '&output=embed';
+      const route = 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(origin) + '&destination=' + encodeURIComponent(destination) + '&travelmode=driving';
+      if (frame) frame.src = embed;
+      if (preview) preview.hidden = false;
+      if (openLink) openLink.href = route;
+      if (status) status.textContent = 'Route from ' + originLabel + ' to this property. Use the full directions link for turn-by-turn navigation.';
+      goButton.disabled = false;
+      goButton.textContent = 'Update route';
+    };
+
     goButton.addEventListener('click', () => {
-      if (!mode || mode.value === 'place') {
+      if (mode && mode.value === 'place') {
         const origin = (originInput && originInput.value || '').trim();
-        if (!origin) { if (status) status.textContent = 'Enter a starting place, such as Nairobi CBD or Westlands.'; originInput && originInput.focus(); return; }
-        const route = 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(origin) + '&destination=' + encodeURIComponent(destination) + '&travelmode=driving';
-        window.open(route, '_blank', 'noopener');
-        if (status) status.textContent = 'Opening the route from ' + origin + ' to the property in Maps.';
+        if (!origin) { if (status) status.textContent = 'Enter a starting place, estate or landmark.'; originInput && originInput.focus(); return; }
+        showRoute(origin, origin);
         return;
       }
       if (!navigator.geolocation) { if (status) status.textContent = 'This browser does not support device location. Choose a starting place instead.'; return; }
-      const tab = window.open('about:blank', '_blank');
-      if (!tab) { if (status) status.textContent = 'Allow pop-ups to open the route, or choose a starting place instead.'; return; }
       goButton.disabled = true; goButton.textContent = 'Finding your location…';
+      if (status) status.textContent = 'Allow location access in your browser to draw the route from here.';
       navigator.geolocation.getCurrentPosition((position) => {
-        const origin = position.coords.latitude + ',' + position.coords.longitude;
-        const route = 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(origin) + '&destination=' + encodeURIComponent(destination) + '&travelmode=driving';
-        tab.location.href = route;
-        if (status) status.textContent = 'Your current location is being used only to open the route in Maps; it is not submitted to site visitor analytics by this directions action.';
-        goButton.disabled = false; goButton.textContent = 'Open route in Maps ↗';
+        const origin = position.coords.latitude.toFixed(6) + ',' + position.coords.longitude.toFixed(6);
+        showRoute(origin, 'your current location');
       }, (error) => {
-        tab.close();
         if (status) status.textContent = error.code === 1 ? 'Location permission denied. Choose a starting place instead.' : 'Could not read location. Choose a starting place instead.';
-        goButton.disabled = false; goButton.textContent = 'Open route in Maps ↗';
-      }, {enableHighAccuracy: false, timeout: 12000, maximumAge: 60000});
+        goButton.disabled = false; goButton.textContent = 'Draw route to this place';
+      }, {enableHighAccuracy: false, timeout: 20000, maximumAge: 120000});
+    });
+  });
+
+  document.querySelectorAll('[data-copy-url]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const value = button.getAttribute('data-copy-url') || window.location.origin + '/';
+      const initialText = button.textContent;
+      try {
+        await navigator.clipboard.writeText(value);
+        button.textContent = 'Link copied';
+        button.setAttribute('aria-live', 'polite');
+        window.setTimeout(() => { button.textContent = initialText; }, 1800);
+      } catch (_) {
+        window.prompt('Copy this invite link:', value);
+      }
     });
   });
 
