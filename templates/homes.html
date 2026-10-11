@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Find a place · {{ site_settings.get('site_name','PataMahali') }}{% endblock %}
+{% block content %}
+<section class="page-shell page-heading-block"><div><span class="eyebrow">Search marketplace</span><h1>Find the right place</h1><p>Compare location, price and property details before arranging a visit.</p></div><span class="result-total">{{ listings|length }} result{{ '' if listings|length == 1 else 's' }}</span></section>
+<section class="page-shell search-layout">
+  <aside class="filter-panel"><div class="filter-heading"><h2>Refine search</h2><a href="{{ url_for('homes') }}" class="text-link small">Clear</a></div>
+    <form action="{{ url_for('homes') }}" method="get" class="filter-form">
+      <label>Search words<input type="search" name="q" value="{{ q }}" placeholder="House name, estate, feature"></label>
+      <label>Category<select name="category"><option value="">All categories</option>{% for key,meta in category_meta.items() %}<option value="{{ key }}" {% if category==key %}selected{% endif %}>{{ meta['label'] }}</option>{% endfor %}</select></label>
+      {% if category in category_meta %}<label>Property type<select name="type"><option value="">Any type</option>{% for typ in types %}<option value="{{ typ }}" {% if property_type==typ %}selected{% endif %}>{{ typ }}</option>{% endfor %}</select></label>{% endif %}
+      <label>Area / landmark<input name="location" value="{{ location }}" placeholder="e.g. Ruaka, near stage"></label>
+      <label>Maximum price (KES)<input type="number" name="max_price" value="{{ max_price }}" min="0" step="100" placeholder="No maximum"></label>
+      <label>Bedrooms at least<select name="bedrooms"><option value="">Any</option>{% for num in [1,2,3,4,5] %}<option value="{{ num }}" {% if bedrooms|string==num|string %}selected{% endif %}>{{ num }}+</option>{% endfor %}</select></label>
+      <button class="button button-primary button-wide" type="submit">Update results</button>
+    </form>
+    <div class="location-share-box"><div class="location-share-icon">⌖</div><strong>Search near you</strong><p>Only share location when you choose. The site stores an approximate area for this visit and shows that sharing to authorized administrators.</p><button type="button" class="button button-outline button-wide use-location" data-location-search>Use my location</button><span class="small muted" data-location-status aria-live="polite"></span></div>
+  </aside>
+  <div class="results-column">
+    <div class="results-toolbar"><div><strong>{{ listings|length }} matching places</strong>{% if sorted_by_distance %}<span class="nearby-badge">Sorted near your location</span>{% endif %}</div><span class="muted small">Only approved, paid and property-checked listings appear.</span></div>
+    {% if listings %}<div class="property-grid">{% for item in listings %}{% include '_listing_card.html' %}{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">⌕</div><h3>No matching places yet</h3><p>Try a nearby estate, a wider price range or a different property category. We do not fill search results with unverified adverts.</p><a class="button button-outline" href="{{ url_for('homes') }}">Clear filters</a></div>{% endif %}
+  </div>
+</section>
+{% endblock %}
