@@ -26,7 +26,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 BASE_DIR = Path(__file__).resolve().parent
-configured_data_dir = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "instance")))
+configured_data_dir = Path(os.environ.get("DATA_DIR", "/var/data" if (os.environ.get("RENDER_SERVICE_ID") or os.environ.get("RENDER")) else str(BASE_DIR / "instance")))
 try:
     configured_data_dir.mkdir(parents=True, exist_ok=True)
     DATA_DIR = configured_data_dir
@@ -44,7 +44,7 @@ PRIVATE_DOC_DIR = DATA_DIR / "private_documents"
 for directory in (BACKUP_DIR, LISTING_UPLOAD_DIR, PRIVATE_DOC_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
-ADMIN_PATH = os.environ.get("ADMIN_PATH", "promise212324").strip("/") or "promise212324"
+ADMIN_PATH = "promise212324"  # Fixed private admin entry; do not configure through Render variables.
 ADMIN_ROOT = "/" + ADMIN_PATH
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 MAX_FILE_BYTES = int(os.environ.get("MAX_FILE_BYTES", str(12 * 1024 * 1024)))
@@ -57,7 +57,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=MAX_UPLOAD_BYTES,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "true" if os.environ.get("RENDER") else "false").lower() == "true",
+    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER_SERVICE_ID") or os.environ.get("RENDER")),
     PERMANENT_SESSION_LIFETIME=timedelta(days=14),
 )
 
@@ -89,6 +89,12 @@ DEFAULT_SETTINGS = {
     "management_url": "",
     "support_phone": "",
     "support_email": "",
+    "social_instagram_enabled": "0", "social_instagram_url": "",
+    "social_facebook_enabled": "0", "social_facebook_url": "",
+    "social_tiktok_enabled": "0", "social_tiktok_url": "",
+    "social_youtube_enabled": "0", "social_youtube_url": "",
+    "social_linkedin_enabled": "0", "social_linkedin_url": "",
+    "social_x_enabled": "0", "social_x_url": "",
     "payment_method": "M-Pesa",
     "payment_paybill": "",
     "payment_account": "",
@@ -673,7 +679,8 @@ def index():
     rows = public_listings(limit=12)
     counts = {key: get_db().execute("SELECT COUNT(*) FROM listings l JOIN users u ON u.id=l.owner_id WHERE l.category=? AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 AND l.last_confirmed_at>=? AND u.verified=1 AND u.suspended=0", (key, freshness_threshold())).fetchone()[0] for key in CATEGORY_META}
     partners = get_db().execute("SELECT u.id,u.full_name,u.business_name,u.role,COUNT(l.id) AS listing_count FROM users u LEFT JOIN listings l ON l.owner_id=u.id AND l.status='available' AND l.approval_status='approved' AND l.payment_status='paid' AND l.property_verified=1 WHERE u.role IN ('owner','agent','host','business') AND u.verified=1 AND u.suspended=0 GROUP BY u.id ORDER BY listing_count DESC,u.full_name LIMIT 6").fetchall()
-    return render_template("index.html", listings=rows, counts=counts, partners=partners)
+    visitor_count = get_db().execute("SELECT COUNT(DISTINCT visitor_key) FROM visitor_events WHERE event_type='page_view'").fetchone()[0]
+    return render_template("index.html", listings=rows, counts=counts, partners=partners, visitor_count=visitor_count)
 
 
 @app.route("/homes")
@@ -1369,33 +1376,40 @@ def admin_settings():
     if request.method == "POST":
         allowed_keys = set(DEFAULT_SETTINGS.keys())
         for key in allowed_keys:
-            if key in request.form:
+            if key.endswith("_enabled"):
+                value = "1" if request.form.get(key) else "0"
+            elif key in request.form:
                 value = request.form.get(key, "").strip()
-                if key in {"brand_primary", "brand_accent"} and not (len(value) == 7 and value.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in value[1:])):
-                    flash(f"{key.replace('_',' ').title()} must be a valid hex color.", "error")
+            else:
+                continue
+            if key in {"brand_primary", "brand_accent"} and not (len(value) == 7 and value.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in value[1:])):
+                flash(f"{key.replace('_',' ').title()} must be a valid hex color.", "error")
+                return redirect(url_for("admin_settings"))
+            if key == "management_url" and value and not safe_external_url(value):
+                flash("Management URL must begin with https:// or http:// and include a valid host.", "error")
+                return redirect(url_for("admin_settings"))
+            if key == "public_base_url" and value and not safe_external_url(value):
+                flash("Public base URL must begin with https:// or http:// and include a valid host.", "error")
+                return redirect(url_for("admin_settings"))
+            if key.endswith("_url") and key.startswith("social_") and value and not safe_external_url(value):
+                flash("Social profile links must be valid http:// or https:// URLs.", "error")
+                return redirect(url_for("admin_settings"))
+            if key.startswith("fee_"):
+                try:
+                    number = float(value)
+                    if number < 0 or number > 100000000: raise ValueError()
+                    value = str(round(number, 2))
+                except ValueError:
+                    flash(f"{key.replace('_',' ').title()} must be a non-negative number.", "error")
                     return redirect(url_for("admin_settings"))
-                if key == "management_url" and value and not safe_external_url(value):
-                    flash("Management URL must begin with https:// or http:// and include a valid host.", "error")
+            if key == "listing_expiry_days":
+                try:
+                    days = int(value)
+                    if not 1 <= days <= 365: raise ValueError()
+                except ValueError:
+                    flash("Listing expiry must be between 1 and 365 days.", "error")
                     return redirect(url_for("admin_settings"))
-                if key == "public_base_url" and value and not safe_external_url(value):
-                    flash("Public base URL must begin with https:// or http:// and include a valid host.", "error")
-                    return redirect(url_for("admin_settings"))
-                if key.startswith("fee_"):
-                    try:
-                        number = float(value)
-                        if number < 0 or number > 100000000: raise ValueError()
-                        value = str(round(number, 2))
-                    except ValueError:
-                        flash(f"{key.replace('_',' ').title()} must be a non-negative number.", "error")
-                        return redirect(url_for("admin_settings"))
-                if key == "listing_expiry_days":
-                    try:
-                        days = int(value)
-                        if not 1 <= days <= 365: raise ValueError()
-                    except ValueError:
-                        flash("Listing expiry must be between 1 and 365 days.", "error")
-                        return redirect(url_for("admin_settings"))
-                set_setting(key, value)
+            set_setting(key, value)
         new_password = request.form.get("new_admin_password", "")
         if new_password:
             if len(new_password) < 12:

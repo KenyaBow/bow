@@ -1,52 +1,50 @@
 {% extends 'base.html' %}
-{% block title %}{{ site_settings.get('site_name','PataMahali') }} · Find the right place{% endblock %}
-{% block meta_description %}{{ site_settings.get('site_description','Find verified homes, stays, shops, warehouses and property.') }}{% endblock %}
+{% block title %}{{ site_settings.get('site_name','PataMahali') }} · Find your next place{% endblock %}
+{% block meta_description %}{{ site_settings.get('site_description','Discover homes, stays and commercial spaces with clear, accountable property listings.') }}{% endblock %}
+{% block head %}
+<meta name="robots" content="index,follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+{% endblock %}
 {% block content %}
-<section class="hero page-shell">
-  <div class="hero-copy">
-    <div class="eyebrow"><span class="eyebrow-dot"></span> Real places. Clearer details.</div>
-    <h1>{{ site_settings.get('tagline','Find the right place.') }} <span>With more confidence.</span></h1>
-    <p>Discover homes, short stays, shops, offices and warehouses. See what has been checked, where it is, and when availability was last confirmed.</p>
-    <div class="hero-actions"><a class="button button-primary" href="{{ url_for('homes') }}">Find a place <span>→</span></a><a class="button button-outline" href="{{ url_for('partner_register') }}">List a property</a></div>
-    <div class="hero-trust"><span>✓ Identity-checked partners</span><span>✓ Property-level reviews</span><span>✓ Clear availability dates</span></div>
+<section class="entry-page" aria-labelledby="entry-title">
+  <div class="entry-glow entry-glow-one" aria-hidden="true"></div>
+  <div class="entry-glow entry-glow-two" aria-hidden="true"></div>
+  <div class="entry-content">
+    <a class="entry-brand" href="{{ url_for('index') }}" aria-label="{{ site_settings.get('site_name','PataMahali') }} home">
+      <span class="entry-brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none"><path d="M8 22.5 24 9l16 13.5V39H8V22.5Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M19 39V27h10v12M15 23h.01M33 23h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </span>
+      <span>{{ site_settings.get('site_name','PataMahali') }}</span>
+    </a>
+    <div class="entry-intro">
+      <span class="entry-kicker"><span class="entry-kicker-dot"></span> A better way to find your place</span>
+      <h1 id="entry-title">Welcome to <span>{{ site_settings.get('site_name','PataMahali') }}</span></h1>
+      <p>{{ site_settings.get('tagline','Find the right place, with confidence.') }}</p>
+    </div>
+    <div class="entry-gates">
+      <a class="entry-gate gate-seeker" href="{{ url_for('homes') }}">
+        <span class="gate-number">01 <span>· DISCOVER</span></span>
+        <span class="gate-icon" aria-hidden="true"><svg viewBox="0 0 52 52" fill="none"><path d="M9 23 26 9l17 14v20H9V23Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M21 43V29h10v14M16 23h.01M36 23h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="39" cy="13" r="7" fill="currentColor"/><path d="m36 13 2 2 4-4" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="gate-copy"><strong>Find a place</strong><small>Explore homes, stays, shops and spaces.</small></span>
+        <span class="gate-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19 19 5M7 5h12v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+      <a class="entry-gate gate-owner" href="{{ url_for('partner_register') }}">
+        <span class="gate-number">02 <span>· PARTNER</span></span>
+        <span class="gate-icon" aria-hidden="true"><svg viewBox="0 0 52 52" fill="none"><path d="M7 44V19L26 8l19 11v25H7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M17 44V29h18v15M16 21h.01M26 21h.01M36 21h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 14V8h12v13" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+        <span class="gate-copy"><strong>List a property</strong><small>For owners and authorized agents.</small></span>
+        <span class="gate-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19 19 5M7 5h12v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+    </div>
+    <div class="entry-footline"><span>Clear details. Accountable partners.</span><span class="entry-reach"><span class="reach-dot"></span><strong data-count-up="{{ visitor_count|int }}">{{ visitor_count|int }}</strong> visits so far</span></div>
   </div>
-  <div class="hero-panel">
-    <div class="hero-panel-top"><div><span class="panel-kicker">Start your search</span><h2>What kind of place?</h2></div><span class="hero-icon">⌂</span></div>
-    <form action="{{ url_for('homes') }}" method="get" class="quick-search">
-      <label>Location or landmark<input type="search" name="location" placeholder="e.g. Ruaka, Westlands, CBD"></label>
-      <label>I'm looking for<select name="category"><option value="">All categories</option>{% for key,meta in category_meta.items() %}<option value="{{ key }}">{{ meta['label'] }}</option>{% endfor %}</select></label>
-      <button class="button button-primary button-wide" type="submit">Search places <span>→</span></button>
-    </form>
-    <div class="hero-panel-bottom"><span class="shield-mini">✓</span><span>We show the checks completed, not just a badge.</span></div>
-  </div>
-  <div class="hero-decoration decor-one"></div><div class="hero-decoration decor-two"></div>
+  <div class="entry-corner entry-corner-top" aria-hidden="true"></div>
+  <div class="entry-corner entry-corner-bottom" aria-hidden="true"></div>
 </section>
-
-<section class="page-shell category-section">
-  <div class="section-heading"><div><span class="eyebrow">Explore by category</span><h2>One place for different needs</h2><p>Choose a category to see the details that matter to you.</p></div><a class="text-link" href="{{ url_for('homes') }}">Browse everything →</a></div>
-  <div class="category-grid">
-    {% set category_icons = {'residential':'⌂','short_stay':'✳','commercial':'▤','industrial':'▥','land_sale':'⌁','property_sale':'◇'} %}
-    {% for key,meta in category_meta.items() %}
-    <a class="category-tile" href="{{ url_for('homes', category=key) }}"><span class="category-icon">{{ category_icons[key] }}</span><span class="category-text"><strong>{{ meta['label'] }}</strong><small>{{ meta['description'] }}</small></span><span class="category-count">{{ counts[key] }}</span><span class="tile-arrow">↗</span></a>
-    {% endfor %}
-  </div>
-</section>
-
-<section class="section-soft">
-  <div class="page-shell section-pad">
-    <div class="section-heading"><div><span class="eyebrow">Browse verified listings</span><h2>Places ready to explore</h2><p>Listings shown here have passed the platform's required publication checks.</p></div><a class="button button-outline" href="{{ url_for('homes') }}">See all places</a></div>
-    {% if listings %}<div class="property-grid">{% for item in listings %}{% include '_listing_card.html' %}{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">⌂</div><h3>Your next place starts here</h3><p>There are no published properties yet. Once partners are verified, fees are confirmed and properties are checked, they will appear here.</p><a class="button button-primary" href="{{ url_for('partner_register') }}">Become a property partner</a></div>{% endif %}
-  </div>
-</section>
-
-<section class="page-shell two-path-section">
-  <div class="section-heading"><div><span class="eyebrow">Made for both sides</span><h2>Find a place or list one</h2></div></div>
-  <div class="two-path-grid">
-    <article class="path-card seeker-path"><div class="path-icon">⌂</div><div><h3>Looking for a place?</h3><p>Compare current listings, check the location, view partner details and send an interest enquiry without making a blind trip.</p><a class="button button-primary" href="{{ url_for('homes') }}">Start house hunting →</a></div></article>
-    <article class="path-card partner-path"><div class="path-icon">▦</div><div><h3>Own or manage property?</h3><p>Build your verified partner profile, submit genuine property photos, confirm the location and manage each listing from one account.</p><a class="button button-outline" href="{{ url_for('partner_register') }}">Become a partner →</a></div></article>
-  </div>
-</section>
-
-{% if partners %}<section class="section-soft"><div class="page-shell section-pad"><div class="section-heading"><div><span class="eyebrow">Accountable listings</span><h2>Our verified partners</h2><p>Partner identity is checked separately from each property.</p></div><a class="text-link" href="{{ url_for('partners_directory') }}">Meet all partners →</a></div><div class="partner-mini-grid">{% for partner in partners %}<article class="partner-mini"><span class="partner-avatar">{{ (partner['business_name'] or partner['full_name'])[:1]|upper }}</span><div><strong>{{ partner['business_name'] or partner['full_name'] }}</strong><small>{{ {'owner':'Property owner','agent':'Authorized agent','host':'Accommodation host','business':'Commercial property provider'}.get(partner['role'],'Property partner') }}</small><span class="verified-tag">✓ Verified partner</span></div><span class="partner-listing-count">{{ partner['listing_count'] }} listed</span></article>{% endfor %}</div></div></section>{% endif %}
-<section class="page-shell safety-strip"><div class="safety-icon">✓</div><div><h3>Always know what has been checked</h3><p>Partner identity, property verification and availability are different checks. Never pay a deposit before independently confirming the property and payment recipient.</p></div><a class="text-link" href="{{ url_for('homes') }}">Find a place safely →</a></section>
+<script>
+(function(){
+  const counter=document.querySelector('[data-count-up]');
+  if(counter){const target=Math.max(0,Number(counter.dataset.countUp)||0); if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches && target>0){const start=performance.now(),duration=650;function tick(now){const p=Math.min(1,(now-start)/duration);counter.textContent=Math.round(target*(1-Math.pow(1-p,3))).toLocaleString();if(p<1)requestAnimationFrame(tick)}counter.textContent='0';requestAnimationFrame(tick)}}
+})();
+</script>
 {% endblock %}

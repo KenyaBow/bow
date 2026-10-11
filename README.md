@@ -4,14 +4,14 @@ A responsive Flask + SQLite marketplace starter for rental homes, short stays, s
 
 ## Included
 
-- Public property search and two-column mobile / three-column desktop cards.
+- Minimal animated welcome screen with just two primary choices: Find a place or List a property. Public search uses compact two-column mobile / three-column desktop cards.
 - Property detail pages, real image uploads, landmarks, stored coordinates, Google Maps directions, interest requests and “report taken” flow.
 - Partner accounts for owners, agents, hosts and commercial-property providers; private ID/passport front/back uploads; reusable partner profiles.
 - Configurable category listing charges. A payment reference does **not** itself count as verified payment. An administrator must reconcile it, verify the partner, and separately approve/check the property before it can publish.
 - `Visit my management` button on the partner pages. Admin can connect it under Site & Fees; when no URL is configured, it opens a friendly placeholder page.
-- Admin entry path defaults to `/promise212324`. Admin tools cover listings, payment confirmation, verification, partner accounts, enquiries, taken-listing reports, settings, traffic analytics, and full SQLite download/restore.
+- Admin entry path is hard-coded at `/promise212324`. Admin tools cover listings, payment confirmation, verification, partner accounts, enquiries, taken-listing reports, settings, traffic analytics, and full SQLite download/restore.
 - Explicit opt-in device location for nearby sorting. Only approximate coordinates rounded to three decimal places are stored for visitor analytics; no IP addresses are stored. Anonymous visits appear as browser sessions, not verified real-world people.
-- Platform and property QR codes, manifest, installable PWA shell, offline fallback warning, dynamic sitemap and robots.txt.
+- Platform and property QR codes, manifest, installable PWA shell with cache version refresh, offline fallback warning, dynamic sitemap and robots.txt. The landing counter animates to the actual recorded visit total; it does not fabricate visitors.
 - SQLite snapshot backups, daily automatic snapshots (14 retained), manual backup creation, download, and validated restore with a safety backup first.
 
 ## Local run
@@ -28,7 +28,7 @@ python app.py
 
 Open `http://127.0.0.1:5000/`.
 
-The admin login is at `http://127.0.0.1:5000/promise212324` by default. Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` **before first startup**. If no admin password was supplied, the app generates one and prints it to the first-startup console/logs. The seeded admin user's display name is the configured username; use that as the administrator username at sign-in.
+The admin login is at `http://127.0.0.1:5000/promise212324` (fixed path). Set only `ADMIN_USERNAME` and `ADMIN_PASSWORD` in Render **before first startup**. The app generates and stores its Flask session signing key on the persistent disk. The seeded admin user's display name is the configured username; use that as the administrator username at sign-in.
 
 Copy `.env.example` to `.env` for your own notes if you use a local environment loader; the application itself reads operating-system environment variables and does not automatically load `.env`. Never commit real secrets.
 
@@ -38,7 +38,6 @@ Example development environment:
 # Linux/macOS
 export ADMIN_USERNAME=admin
 export ADMIN_PASSWORD='a-long-unique-password-here'
-export SECRET_KEY='a-long-random-secret-here'
 python app.py
 ```
 
@@ -48,13 +47,13 @@ Set a password of at least 12 characters for the administrator. The site can als
 
 1. Upload this folder's contents to a new GitHub repository.
 2. In Render, create a **Blueprint** from the repository and review the `render.yaml` before accepting it. It configures a Starter web service and a 1 GB persistent disk. A persistent disk is required for dependable SQLite/file persistence and is a paid Render feature; check Render's current pricing before creating the service.
-3. Set the `ADMIN_PASSWORD` secret requested by Render to a unique password you control. Keep `SECRET_KEY` private. The Blueprint sets `DATA_DIR=/var/data` after configuring the disk, `ADMIN_PATH=promise212324`, and `COOKIE_SECURE=true`.
+3. Render asks you to set just `ADMIN_USERNAME` and `ADMIN_PASSWORD`. The admin route is hard-coded as `/promise212324`; the persistent disk is mounted at `/var/data`, where the app generates and stores its session key automatically. No other manual environment variables are required.
 4. Deploy. Admin URL: `https://YOUR-RENDER-SERVICE.onrender.com/promise212324`.
 5. Under administrator **Site, pricing & connections**, configure the final brand name, fees, M-Pesa details, public base URL once your domain is attached, support contacts, and the second property-management website URL.
 6. Attach your actual domain in Render when ready. The app generates QR and sitemap URLs using the configured public base URL or current host. If domain settings change, update `public_base_url` in admin and check QR links.
 7. Download a full backup after major configuration changes and keep a copy away from the Render account. Test restoration before you put real client data into production.
 
-**Do not set `DATA_DIR=/var/data` unless a persistent disk is actually mounted there.** If that path cannot be created, the app logs a warning and falls back to a local `instance/` folder so the service can start; that fallback is ephemeral on Render and is not a production persistence configuration.
+The Blueprint mounts a persistent disk at `/var/data`. The app uses this path automatically on Render and falls back to local `instance/` for local development.
 
 ## Admin workflow
 
@@ -67,6 +66,9 @@ Set a password of at least 12 characters for the administrator. The site can als
 
 ## Important production notes / limitations
 
+- Social account buttons are optional and administrator-configurable. The public homepage intentionally keeps only the two main entry choices.
+- This starter does not automatically scrape or repost homes from social media. Add real property content only with appropriate owner/agent authorization; any demo property information should be clearly labelled as illustrative until it is verified.
+
 - **Payment verification is manual in this release.** The system records the M-Pesa/payment reference and an admin action. Automatic Safaricom M-Pesa verification requires your own Daraja app credentials, callback URL and testing; no payment is represented as verified without an admin confirmation.
 - **Verification is an operational process, not magic.** The site cannot autonomously prove that a house exists or that an uploader has legal authority. An authorized team must review evidence and/or inspect properties before marking them verified.
 - **Identity and precise location are sensitive.** Partner documents are stored outside public static folders and served only through authenticated admin routes. For launch, configure a persistent disk with restricted access, enforce strong admin credentials, document retention/deletion rules, HTTPS, and Kenya data-protection compliance. Consider off-site encrypted backups for uploads as well as the database.
@@ -76,19 +78,16 @@ Set a password of at least 12 characters for the administrator. The site can als
 - The management-site link is an integration point only; tenant ledgers, e-invoices and rent receipts belong to the separate system you described and are not implemented inside this marketplace package.
 - The PWA caches public navigation pages only, never partner/admin screens. Offline listing pages can be stale, so an offline banner warns that availability must be rechecked online.
 
-## Main environment variables
+## Render environment variables
+
+Only two values need to be entered manually:
 
 | Variable | Purpose |
 |---|---|
-| `DATA_DIR` | Persistent data directory; use `/var/data` only after a Render disk is mounted. |
-| `ADMIN_PATH` | Private admin entry path, default `promise212324`. |
-| `ADMIN_USERNAME` | Admin username/display name created on first startup. |
-| `ADMIN_PASSWORD` | Admin password created on first startup; set before the first database is initialized. |
-| `SECRET_KEY` | Persistent random Flask session signing key. |
-| `COOKIE_SECURE` | Set `true` on HTTPS production. |
-| `PUBLIC_BASE_URL` | Optional public URL used to generate absolute QR and sitemap links; admin can override it. |
-| `MAX_UPLOAD_BYTES` | Maximum total request upload size; defaults to 100 MB. |
-| `MAX_FILE_BYTES` | Maximum size of one image or identity document; defaults to 12 MB. |
+| `ADMIN_USERNAME` | Administrator username created during first startup. |
+| `ADMIN_PASSWORD` | Strong administrator password created during first startup; set before the database is initialized. |
+
+The admin URL is fixed at `/promise212324`. Do not add `ADMIN_PATH`, `DATA_DIR`, `SECRET_KEY`, or `COOKIE_SECURE` yourself. The Render disk and application handle storage and session key setup.
 
 ## Before public launch
 

@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="{{ site_settings.get('brand_primary', '#176B4D') }}">
+  <meta name="theme-color" content="{{ site_settings.get('brand_primary', '#223A63') }}">
   <meta name="description" content="{% block meta_description %}{{ site_settings.get('site_description', 'Find verified homes, stays, shops, warehouses and property.') }}{% endblock %}">
   <link rel="manifest" href="{{ url_for('manifest') }}">
   <link rel="icon" href="{{ url_for('icon_svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <title>{% block title %}{{ site_settings.get('site_name', 'PataMahali') }} · Find the right place{% endblock %}</title>
-  <style>:root{--brand:{{ site_settings.get('brand_primary','#176B4D') }};--accent:{{ site_settings.get('brand_accent','#D9A441') }};}</style>
+  <style>:root{--brand:{{ site_settings.get('brand_primary','#223A63') }};--accent:{{ site_settings.get('brand_accent','#E2A27B') }};}</style>
   {% block head %}{% endblock %}
 </head>
 <body>
   <div class="offline-banner" id="offlineBanner" hidden>You are offline. Saved page details may be out of date; availability and prices need to be confirmed online.</div>
+  {% if request.endpoint != 'index' %}
   <header class="site-header">
     <a class="brand" href="{{ url_for('index') }}" aria-label="{{ site_settings.get('site_name','PataMahali') }} home">
       <span class="brand-mark"><img src="{{ url_for('icon_svg') }}" alt="" width="30" height="30"></span>
@@ -38,20 +39,30 @@
       <a class="nav-qr" href="{{ url_for('qr_platform') }}" target="_blank" rel="noopener"><span aria-hidden="true">▦</span> Share QR</a>
     </nav>
   </header>
+  {% endif %}
   <main id="main-content">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}<div class="flash-stack page-shell">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  {% if request.endpoint != 'index' %}
   <footer class="site-footer">
     <div class="footer-inner">
       <div class="footer-brand"><strong>{{ site_settings.get('site_name','PataMahali') }}</strong><p>Find places with clearer details and more accountable listings.</p><span class="footer-note">{{ site_settings.get('terms_notice','Always verify a property before paying a deposit.') }}</span></div>
       <div class="footer-links"><a href="{{ url_for('homes') }}">Explore places</a><a href="{{ url_for('partners_directory') }}">Verified partners</a><a href="{{ url_for('partner_register') }}">Become a partner</a><a href="{{ url_for('privacy_policy') }}">Privacy notice</a><a href="{{ url_for('terms_of_use') }}">Terms of use</a><a href="{{ url_for('qr_platform') }}" target="_blank" rel="noopener">Platform QR code</a></div>
       <div class="footer-contact">{% if site_settings.get('support_phone') %}<p>Call / WhatsApp: <a href="tel:{{ site_settings.get('support_phone') }}">{{ site_settings.get('support_phone') }}</a></p>{% endif %}{% if site_settings.get('support_email') %}<p><a href="mailto:{{ site_settings.get('support_email') }}">{{ site_settings.get('support_email') }}</a></p>{% endif %}<button type="button" class="button button-small button-outline" data-install-pwa hidden>Install app</button></div>
     </div>
+    <div class="footer-socials" aria-label="Official social accounts">
+      {% for social_key, social_label in [('instagram','Instagram'),('facebook','Facebook'),('tiktok','TikTok'),('youtube','YouTube'),('linkedin','LinkedIn'),('x','X')] %}
+        {% if site_settings.get('social_' ~ social_key ~ '_enabled') == '1' and site_settings.get('social_' ~ social_key ~ '_url') %}
+          <a href="{{ site_settings.get('social_' ~ social_key ~ '_url') }}" target="_blank" rel="noopener noreferrer">{{ social_label }}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
     <div class="footer-bottom"><span>© {{ current_year }} {{ site_settings.get('site_name','PataMahali') }}</span><span>Property status is subject to the latest recorded confirmation.</span></div>
   </footer>
+  {% endif %}
   <script>window.APP_CSRF={{ session.get('csrf_token','')|tojson }};</script>
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
   {% block scripts %}{% endblock %}

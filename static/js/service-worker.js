@@ -1,4 +1,4 @@
-const CACHE_NAME = 'patamahali-shell-v1';
+const CACHE_NAME = 'patamahali-shell-v2';
 const SHELL_ASSETS = ['/static/css/style.css', '/static/js/app.js', '/icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)).then(() => self.skipWaiting()));
@@ -28,7 +28,7 @@ self.addEventListener('fetch', (event) => {
     }).catch(async () => {
       const cached = await caches.match(request);
       if (cached) return cached;
-      return new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font:16px system-ui;max-width:36rem;margin:3rem auto;padding:1rem;color:#1d2b26"><h1>You are offline</h1><p>Reconnect to view current listings and confirm availability. Saved page information may be out of date.</p><a href="/">Try the home page</a></body></html>', {headers: {'Content-Type': 'text/html; charset=utf-8'}});
+      return new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font:16px system-ui;max-width:36rem;margin:3rem auto;padding:1rem;color:#182235"><h1>You are offline</h1><p>Reconnect to view current listings and confirm availability. Saved page information may be out of date.</p><a href="/">Try the home page</a></body></html>', {headers: {'Content-Type': 'text/html; charset=utf-8'}});
     }));
   }
 });
