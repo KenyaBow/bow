@@ -1,5 +1,5 @@
-const CACHE_NAME = 'patamahali-shell-v2';
-const SHELL_ASSETS = ['/static/css/style.css', '/static/js/app.js', '/icon.svg'];
+const CACHE_NAME = 'patamahali-shell-v3';
+const SHELL_ASSETS = ['/static/css/style.css?v=20261011b', '/static/js/app.js?v=20261011b', '/icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)).then(() => self.skipWaiting()));
 });

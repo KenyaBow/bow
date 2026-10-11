@@ -4,6 +4,11 @@
 {% block head %}<meta name="robots" content="index,follow"><meta property="og:title" content="{{ site_settings.get('site_name','PataMahali')|e }}"><meta property="og:description" content="Find a place or list a property.">{% endblock %}
 {% block content %}
 <section class="entry-minimal" aria-label="Welcome to {{ site_settings.get('site_name','PataMahali') }}">
+  <div class="entry-opening-sequence" aria-hidden="true">
+    <span class="entry-opening-symbol"><span></span></span>
+    <span class="entry-opening-name">{{ site_settings.get('site_name','PataMahali') }}</span>
+    <span class="entry-opening-line"></span>
+  </div>
   <div class="entry-glow entry-glow-one" aria-hidden="true"></div>
   <div class="entry-glow entry-glow-two" aria-hidden="true"></div>
   <div class="entry-minimal-inner">
