@@ -2,7 +2,16 @@
 {% block title %}Find a place · {{ site_settings.get('site_name','PataMahali') }}{% endblock %}
 {% block meta_description %}Search houses, stays and commercial property by location, type and realistic budget.{% endblock %}
 {% block content %}
-<section class="page-shell search-page-intro"><div><span class="eyebrow">Discover</span><h1>Find a place that fits.</h1><p>Real details. Clear prices. Better directions.</p></div><span class="search-result-count">{{ listings|length }} match{{ '' if listings|length==1 else 'es' }}</span></section>
+<section class="page-shell search-page-intro"><div><span class="eyebrow">Find your next place</span><h1>{% if category == 'residential' %}Homes for rent{% elif category == 'short_stay' and property_type == 'Hotel room' %}Hotels{% elif category == 'short_stay' and property_type == 'BnB' %}Airbnb & short stays{% elif category == 'short_stay' %}Stays & furnished places{% elif category == 'commercial' %}Shops & business spaces{% elif category == 'industrial' %}Warehouses & godowns{% elif category == 'land_sale' %}Land & plots{% elif category == 'property_sale' %}Property for sale{% else %}Find a place that fits{% endif %}</h1><p>Compare prices, locations and useful details before you go.</p></div><span class="search-result-count">{{ listings|length }} match{{ '' if listings|length==1 else 'es' }}</span></section>
+<section class="page-shell category-switcher" aria-label="Choose what you are looking for">
+  <a class="category-switch-chip {% if category in ['', 'residential'] %}is-active{% endif %}" href="{{ url_for('homes', category='residential') }}"><span class="category-switch-mark">⌂</span><span>Rentals</span></a>
+  <a class="category-switch-chip {% if category == 'short_stay' and property_type != 'Hotel room' %}is-active{% endif %}" href="{{ url_for('homes', category='short_stay', type='BnB') }}"><span class="category-switch-mark">⌁</span><span>Airbnb & stays</span></a>
+  <a class="category-switch-chip {% if category == 'short_stay' and property_type == 'Hotel room' %}is-active{% endif %}" href="{{ url_for('homes', category='short_stay', type='Hotel room') }}"><span class="category-switch-mark">▤</span><span>Hotels</span></a>
+  <a class="category-switch-chip {% if category == 'commercial' %}is-active{% endif %}" href="{{ url_for('homes', category='commercial') }}"><span class="category-switch-mark">▥</span><span>Shops & offices</span></a>
+  <a class="category-switch-chip {% if category == 'industrial' %}is-active{% endif %}" href="{{ url_for('homes', category='industrial') }}"><span class="category-switch-mark">▦</span><span>Warehouses</span></a>
+  <a class="category-switch-chip {% if category == 'land_sale' %}is-active{% endif %}" href="{{ url_for('homes', category='land_sale') }}"><span class="category-switch-mark">◇</span><span>Land</span></a>
+  <a class="category-switch-chip {% if category == 'property_sale' %}is-active{% endif %}" href="{{ url_for('homes', category='property_sale') }}"><span class="category-switch-mark">▧</span><span>For sale</span></a>
+</section>
 {% if market_items %}
 <section class="page-shell market-discovery-section" aria-labelledby="market-discovery-title">
   <div class="market-discovery-heading"><div><span class="eyebrow">A wider look</span><h2 id="market-discovery-title">Places already on the market</h2><p>Browse first, then narrow down by area and budget.</p></div><span class="market-rotation-label">Rotating selection</span></div>
@@ -84,4 +93,10 @@
   });
 })();
 </script>
+
+<nav class="mobile-home-dock" aria-label="Quick navigation">
+  <a href="{{ url_for('homes', category=category or 'residential') }}" class="dock-item {% if request.endpoint == 'homes' %}dock-active{% endif %}"><span aria-hidden="true">⌕</span><small>Explore</small></a>
+  <a href="{{ url_for('index') }}" class="dock-home" aria-label="Home"><span aria-hidden="true">⌂</span></a>
+  <a href="{% if current_user and current_user['role'] in ['owner','agent','host','business'] %}{{ url_for('partner_dashboard') }}{% else %}{{ url_for('partner_register') }}{% endif %}" class="dock-item"><span aria-hidden="true">＋</span><small>List place</small></a>
+</nav>
 {% endblock %}

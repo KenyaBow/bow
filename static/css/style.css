@@ -648,3 +648,41 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
 .empty-signal{width:35px;height:35px;border-radius:11px}
 .empty-signal svg{width:19px;height:19px}
 @media(max-width:600px){.nearby-search-row{grid-template-columns:33px minmax(0,1fr)}.nearby-mark{width:33px;height:33px}.nearby-mark svg{width:17px;height:17px}}
+
+
+/* Category-first browsing: compact, distinct, thumb-friendly */
+.category-switcher{display:flex;gap:9px;overflow-x:auto;padding-top:4px;padding-bottom:15px;scrollbar-width:thin;overscroll-behavior-inline:contain}
+.category-switch-chip{flex:0 0 auto;display:flex;align-items:center;gap:8px;min-height:45px;padding:7px 13px;border:1px solid #dce2e9;border-radius:13px;background:#fff;color:#26354b;font-size:.88rem;font-weight:700;box-shadow:0 3px 10px rgba(23,37,60,.035);transition:background .18s,border-color .18s,transform .18s}
+.category-switch-chip:hover{transform:translateY(-1px);border-color:#b5c4d8;background:#f8faff}
+.category-switch-chip.is-active{background:#edf2fa;border-color:#7e9bc8;color:#173c70;box-shadow:inset 0 0 0 1px rgba(40,70,115,.06)}
+.category-switch-mark{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#f1e8dc;color:#785b3e;font-size:1.03rem;font-weight:800}
+.search-page-intro{padding-top:30px;padding-bottom:16px}
+.search-page-intro h1{letter-spacing:-.035em}
+.market-discovery-section{padding-top:12px}
+.mobile-home-dock{display:none}
+@media(max-width:680px){
+ body{padding-bottom:76px}
+ .search-page-intro{padding-top:24px;padding-bottom:12px;gap:10px;align-items:flex-start}
+ .search-page-intro h1{font-size:1.75rem;line-height:1.14;margin-bottom:7px}
+ .search-page-intro p{font-size:.9rem;line-height:1.45}
+ .search-result-count{font-size:.72rem;padding:6px 8px;white-space:nowrap}
+ .category-switcher{width:100%;padding:5px 15px 13px;gap:7px}
+ .category-switch-chip{min-height:41px;padding:6px 10px;font-size:.8rem;border-radius:11px}
+ .category-switch-mark{width:23px;height:23px;font-size:.92rem}
+ .market-discovery-heading h2{font-size:1.22rem}
+ .market-discovery-heading p{font-size:.82rem}
+ .market-discovery-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .market-image-link{height:112px}
+ .market-discovery-copy{padding:10px}
+ .market-discovery-copy h3{font-size:.91rem;line-height:1.25}
+ .market-card-price strong{font-size:1rem}
+ .market-card-summary{font-size:.75rem;line-height:1.4}
+ .search-command-panel{margin-top:10px;padding:13px}
+ .mobile-home-dock{position:fixed;z-index:1000;left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom));height:58px;display:flex;align-items:center;justify-content:space-around;padding:4px 12px;background:rgba(255,255,255,.96);border:1px solid rgba(207,216,227,.95);border-radius:19px;box-shadow:0 9px 30px rgba(22,35,57,.16);backdrop-filter:blur(16px)}
+ .dock-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:76px;height:48px;color:#526176;font-weight:700}
+ .dock-item>span{font-size:1.25rem;line-height:1.1}
+ .dock-item small{font-size:.65rem}
+ .dock-item.dock-active{color:#234f86}
+ .dock-home{display:grid;place-items:center;width:48px;height:48px;margin-top:-15px;border:4px solid #fff;border-radius:17px;background:linear-gradient(145deg,#294f83,#456b9e);color:#fff;box-shadow:0 5px 15px rgba(35,66,111,.27)}
+ .dock-home span{font-size:1.55rem;line-height:1}
+}
