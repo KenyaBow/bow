@@ -89,8 +89,8 @@ DEFAULT_SETTINGS = {
     "site_name": "PataMahali",
     "tagline": "Find the right place.",
     "site_description": "Find verified homes, stays, shops, warehouses and property with clearer information and accountable listings.",
-    "brand_primary": "#303030",
-    "brand_accent": "#C5A044",
+    "brand_primary": "#102641",
+    "brand_accent": "#C8A45D",
     "site_logo": "",
     "show_landing_qr_enabled": "1",
     "show_visitor_counter_enabled": "1",
@@ -351,11 +351,11 @@ def init_db() -> None:
         conn.execute("UPDATE settings SET value='0' WHERE key='market_discoveries_enabled'")
         # External-source discovery ads are intentionally not seeded or shown publicly.
         old_brand = conn.execute("SELECT value FROM settings WHERE key='brand_primary'").fetchone()
-        if old_brand and old_brand[0].strip().lower() in {"#176b4d", "#223a63", "#283a62"}:
-            conn.execute("UPDATE settings SET value='#303030' WHERE key='brand_primary'")
+        if old_brand and old_brand[0].strip().lower() in {"#176b4d", "#223a63", "#283a62", "#303030"}:
+            conn.execute("UPDATE settings SET value='#102641' WHERE key='brand_primary'")
         old_accent = conn.execute("SELECT value FROM settings WHERE key='brand_accent'").fetchone()
-        if old_accent and old_accent[0].strip().lower() in {"#d9a441", "#c88a62"}:
-            conn.execute("UPDATE settings SET value='#C5A044' WHERE key='brand_accent'")
+        if old_accent and old_accent[0].strip().lower() in {"#d9a441", "#c88a62", "#c5a044"}:
+            conn.execute("UPDATE settings SET value='#C8A45D' WHERE key='brand_accent'")
         admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
         if not admin:
             username = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
@@ -2094,7 +2094,7 @@ def qr_response(url: str, filename: str):
     from io import BytesIO
     qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=3)
     qr.add_data(url); qr.make(fit=True)
-    image = qr.make_image(fill_color="#283A62", back_color="#FFFFFF")
+    image = qr.make_image(fill_color="#102641", back_color="#FFFFFF")
     out = BytesIO(); image.save(out, format="PNG"); out.seek(0)
     return send_file(out, mimetype="image/png", download_name=f"{filename}.png", max_age=3600)
 
@@ -2125,7 +2125,7 @@ def manifest():
         "short_name": setting("site_name", "PataMahali")[:12],
         "description": setting("site_description", "Verified property marketplace"),
         "start_url": "/", "scope": "/", "display": "standalone",
-        "background_color": "#FFFFFF", "theme_color": "#FFFFFF",
+        "background_color": "#F2F4F7", "theme_color": "#0C1B2D",
         "icons": [{"src": logo_src, "sizes": "any", "type": logo_type}],
     }
     return app.response_class(json.dumps(body), mimetype="application/manifest+json")

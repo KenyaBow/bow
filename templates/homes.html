@@ -4,14 +4,14 @@
 {% block content %}
 <div class="browse-layout page-shell">
   <aside class="category-sidebar" id="homesSidebar" data-homes-sidebar aria-label="Property categories">
-    <div class="category-sidebar-title">Explore places</div>
+    <div class="category-sidebar-title">PROPERTY COLLECTIONS</div>
     <nav class="category-nav">
-      {% if 'residential' in category_meta %}<a class="category-nav-link {% if category == 'residential' %}is-active{% endif %}" href="{{ url_for('homes', category='residential') }}"><span class="category-nav-icon">⌂</span><span>Rentals</span><span class="category-nav-arrow">›</span></a>{% endif %}
-      {% if 'short_stay' in category_meta %}<a class="category-nav-link {% if category == 'short_stay' and property_type != 'Hotel room' %}is-active{% endif %}" href="{{ url_for('homes', category='short_stay') }}"><span class="category-nav-icon">⌁</span><span>Airbnb & stays</span><span class="category-nav-arrow">›</span></a><a class="category-nav-link {% if category == 'short_stay' and property_type == 'Hotel room' %}is-active{% endif %}" href="{{ url_for('homes', category='short_stay', type='Hotel room') }}"><span class="category-nav-icon">▤</span><span>Hotels</span><span class="category-nav-arrow">›</span></a>{% endif %}
-      {% if 'commercial' in category_meta %}<a class="category-nav-link {% if category == 'commercial' %}is-active{% endif %}" href="{{ url_for('homes', category='commercial') }}"><span class="category-nav-icon">▥</span><span>Shops & offices</span><span class="category-nav-arrow">›</span></a>{% endif %}
-      {% if 'industrial' in category_meta %}<a class="category-nav-link {% if category == 'industrial' %}is-active{% endif %}" href="{{ url_for('homes', category='industrial') }}"><span class="category-nav-icon">▦</span><span>Warehouses</span><span class="category-nav-arrow">›</span></a>{% endif %}
-      {% if 'land_sale' in category_meta %}<a class="category-nav-link {% if category == 'land_sale' %}is-active{% endif %}" href="{{ url_for('homes', category='land_sale') }}"><span class="category-nav-icon">◇</span><span>Land & plots</span><span class="category-nav-arrow">›</span></a>{% endif %}
-      {% if 'property_sale' in category_meta %}<a class="category-nav-link {% if category == 'property_sale' %}is-active{% endif %}" href="{{ url_for('homes', category='property_sale') }}"><span class="category-nav-icon">▧</span><span>Property for sale</span><span class="category-nav-arrow">›</span></a>{% endif %}
+      {% if 'residential' in category_meta %}<a class="category-nav-link {% if category == 'residential' %}is-active{% endif %}" href="{{ url_for('homes', category='residential') }}"><span>Rentals</span></a>{% endif %}
+      {% if 'short_stay' in category_meta %}<a class="category-nav-link {% if category == 'short_stay' and property_type != 'Hotel room' %}is-active{% endif %}" href="{{ url_for('homes', category='short_stay') }}"><span>Airbnb & stays</span></a><a class="category-nav-link {% if category == 'short_stay' and property_type == 'Hotel room' %}is-active{% endif %}" href="{{ url_for('homes', category='short_stay', type='Hotel room') }}"><span>Hotels</span></a>{% endif %}
+      {% if 'commercial' in category_meta %}<a class="category-nav-link {% if category == 'commercial' %}is-active{% endif %}" href="{{ url_for('homes', category='commercial') }}"><span>Shops & offices</span></a>{% endif %}
+      {% if 'industrial' in category_meta %}<a class="category-nav-link {% if category == 'industrial' %}is-active{% endif %}" href="{{ url_for('homes', category='industrial') }}"><span>Warehouses</span></a>{% endif %}
+      {% if 'land_sale' in category_meta %}<a class="category-nav-link {% if category == 'land_sale' %}is-active{% endif %}" href="{{ url_for('homes', category='land_sale') }}"><span>Land & plots</span></a>{% endif %}
+      {% if 'property_sale' in category_meta %}<a class="category-nav-link {% if category == 'property_sale' %}is-active{% endif %}" href="{{ url_for('homes', category='property_sale') }}"><span>Property for sale</span></a>{% endif %}
     </nav>
   </aside>
   <button class="category-sidebar-backdrop" type="button" data-sidebar-close aria-label="Close categories" hidden></button>
