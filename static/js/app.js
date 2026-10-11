@@ -1,11 +1,32 @@
 (() => {
   const menuButton = document.querySelector('[data-menu-toggle]');
   const nav = document.querySelector('[data-nav]');
-  if (menuButton && nav) {
+  const homesSidebar = document.querySelector('[data-homes-sidebar]');
+  const sidebarBackdrop = document.querySelector('[data-sidebar-close]');
+  if (menuButton && homesSidebar) {
+    const setSidebarOpen = (opened) => {
+      homesSidebar.classList.toggle('is-open', opened);
+      if (sidebarBackdrop) sidebarBackdrop.hidden = !opened;
+      menuButton.setAttribute('aria-expanded', String(opened));
+      menuButton.setAttribute('aria-label', opened ? 'Close categories' : 'Open categories');
+    };
+    menuButton.addEventListener('click', () => {
+      if (window.matchMedia('(max-width: 900px)').matches) {
+        setSidebarOpen(!homesSidebar.classList.contains('is-open'));
+      } else {
+        const layout = homesSidebar.closest('.browse-layout');
+        const collapsed = layout && layout.classList.toggle('sidebar-collapsed');
+        menuButton.setAttribute('aria-expanded', String(!collapsed));
+        menuButton.setAttribute('aria-label', collapsed ? 'Show categories' : 'Hide categories');
+      }
+    });
+    if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+    homesSidebar.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setSidebarOpen(false)));
+  } else if (menuButton && nav) {
     menuButton.addEventListener('click', () => {
       const opened = nav.classList.toggle('open');
       menuButton.setAttribute('aria-expanded', String(opened));
-      menuButton.setAttribute('aria-label', opened ? 'Close navigation' : 'Open navigation');
+      menuButton.setAttribute('aria-label', opened ? 'Close menu' : 'Open menu');
     });
     nav.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
       nav.classList.remove('open'); menuButton.setAttribute('aria-expanded', 'false');

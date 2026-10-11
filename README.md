@@ -1,5 +1,9 @@
 # PataMahali — deployable verified property marketplace
 
+## Premium finder refresh
+
+The public welcome page now uses a white, graphite and gold identity with a short logo reveal and animated gold edge light around the two entry choices. Inside the finder, Rentals is the default category; the left category sidebar routes to each separate property experience. Search basics stay visible while price/type/bedroom filters are collapsed under “More filters”. Listing prices remain upfront in a pale-green band. The header keeps the menu at the left, the configured brand centered, and the partner action at the right. The footer only promotes developer contact when the administrator has configured the support WhatsApp number or email; no developer URL is hardcoded.
+
 A responsive Flask + SQLite marketplace starter for rental homes, short stays, shops/business premises, warehouses/industrial spaces, land and properties for sale. The brand is a placeholder: the administrator can change the public site name, tagline, colors, contact details, fees, payment instructions, public domain and the partner management-site link.
 
 ## Included

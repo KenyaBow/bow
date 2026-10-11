@@ -5,16 +5,22 @@
 {% block content %}
 <section class="entry-minimal" aria-label="Welcome to {{ site_settings.get('site_name','PataMahali') }}">
   <div class="entry-opening-sequence" aria-hidden="true">
-    <span class="entry-opening-symbol"><span></span></span>
+    <span class="entry-opening-orbit"></span>
+    <span class="entry-opening-symbol">
+      {% if site_settings.get('site_logo') %}<img src="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}" alt="">{% else %}<img src="{{ url_for('icon_svg') }}" alt="">{% endif %}
+    </span>
     <span class="entry-opening-name">{{ site_settings.get('site_name','PataMahali') }}</span>
     <span class="entry-opening-line"></span>
   </div>
   <div class="entry-glow entry-glow-one" aria-hidden="true"></div>
   <div class="entry-glow entry-glow-two" aria-hidden="true"></div>
   <div class="entry-minimal-inner">
-    <div class="entry-minimal-brand">{{ site_settings.get('site_name','PataMahali') }}</div>
+    <div class="entry-minimal-brand" aria-label="{{ site_settings.get('site_name','PataMahali') }}">
+      <span class="entry-brand-logo">{% if site_settings.get('site_logo') %}<img src="{{ url_for('branding_media', filename=site_settings.get('site_logo')) }}" alt="">{% else %}<img src="{{ url_for('icon_svg') }}" alt="">{% endif %}</span>
+      <span>{{ site_settings.get('site_name','PataMahali') }}</span>
+    </div>
     <nav class="entry-minimal-choices" aria-label="Choose where to go">
-      <a class="entry-minimal-choice entry-choice-finder" href="{{ url_for('homes') }}"><span>Find a place</span><span class="entry-choice-arrow" aria-hidden="true">↗</span></a>
+      <a class="entry-minimal-choice entry-choice-finder" href="{{ url_for('homes', category='residential') }}"><span>Find a place</span><span class="entry-choice-arrow" aria-hidden="true">↗</span></a>
       <a class="entry-minimal-choice entry-choice-owner" href="{% if current_user and current_user['role'] in ['owner','agent','host','business'] %}{{ url_for('partner_dashboard') }}{% else %}{{ url_for('partner_register') }}{% endif %}"><span>List a property</span><span class="entry-choice-arrow" aria-hidden="true">↗</span></a>
     </nav>
     {% if site_settings.get('show_landing_qr_enabled','1') == '1' %}

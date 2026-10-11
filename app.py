@@ -89,8 +89,8 @@ DEFAULT_SETTINGS = {
     "site_name": "PataMahali",
     "tagline": "Find the right place.",
     "site_description": "Find verified homes, stays, shops, warehouses and property with clearer information and accountable listings.",
-    "brand_primary": "#283A62",
-    "brand_accent": "#C88A62",
+    "brand_primary": "#303030",
+    "brand_accent": "#C5A044",
     "site_logo": "",
     "show_landing_qr_enabled": "1",
     "show_visitor_counter_enabled": "1",
@@ -351,11 +351,11 @@ def init_db() -> None:
         conn.execute("UPDATE settings SET value='0' WHERE key='market_discoveries_enabled'")
         # External-source discovery ads are intentionally not seeded or shown publicly.
         old_brand = conn.execute("SELECT value FROM settings WHERE key='brand_primary'").fetchone()
-        if old_brand and old_brand[0].strip().lower() in {"#176b4d", "#223a63"}:
-            conn.execute("UPDATE settings SET value='#283A62' WHERE key='brand_primary'")
+        if old_brand and old_brand[0].strip().lower() in {"#176b4d", "#223a63", "#283a62"}:
+            conn.execute("UPDATE settings SET value='#303030' WHERE key='brand_primary'")
         old_accent = conn.execute("SELECT value FROM settings WHERE key='brand_accent'").fetchone()
-        if old_accent and old_accent[0].strip().lower() == "#d9a441":
-            conn.execute("UPDATE settings SET value='#C88A62' WHERE key='brand_accent'")
+        if old_accent and old_accent[0].strip().lower() in {"#d9a441", "#c88a62"}:
+            conn.execute("UPDATE settings SET value='#C5A044' WHERE key='brand_accent'")
         admin = conn.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()
         if not admin:
             username = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
@@ -769,13 +769,19 @@ def safe_video_embed_url(value: str) -> str:
 @app.context_processor
 def inject_globals():
     user = get_current_user()
+    settings = all_settings()
+    enabled_categories = {
+        key: meta for key, meta in CATEGORY_META.items()
+        if settings.get(f"category_enabled_{key}", "1") == "1"
+    }
     return {
-        "site_settings": all_settings(),
-        "promo_embed_url": safe_video_embed_url(setting("promo_video_url", "")),
+        "site_settings": settings,
+        "promo_embed_url": safe_video_embed_url(settings.get("promo_video_url", "")),
         "current_user": user,
         "csrf_field": csrf_field,
         "listing_images": listing_images,
         "category_meta": CATEGORY_META,
+        "public_categories": enabled_categories,
         "money": money,
         "admin_root": ADMIN_ROOT,
         "current_year": datetime.now().year,
@@ -904,15 +910,15 @@ def _listing_search_text(row) -> str:
 @app.route("/homes")
 def homes():
     q = request.args.get("q", "").strip()[:120]
-    category = request.args.get("category", "").strip()
+    category = request.args.get("category", "residential").strip() or "residential"
     property_type = request.args.get("type", "").strip()
     location = request.args.get("location", "").strip()[:120]
     min_price = request.args.get("min_price", "").strip()
     max_price = request.args.get("max_price", "").strip()
     min_beds = request.args.get("bedrooms", "").strip()
     category_meta = visible_categories()
-    if category in CATEGORY_META and category not in category_meta:
-        category = ""
+    if category not in category_meta:
+        category = "residential" if "residential" in category_meta else (next(iter(category_meta), ""))
         property_type = ""
     base_clauses, base_params = [], []
     if category in category_meta:
@@ -2119,7 +2125,7 @@ def manifest():
         "short_name": setting("site_name", "PataMahali")[:12],
         "description": setting("site_description", "Verified property marketplace"),
         "start_url": "/", "scope": "/", "display": "standalone",
-        "background_color": "#F6F7FA", "theme_color": setting("brand_primary", "#283A62"),
+        "background_color": "#FFFFFF", "theme_color": "#FFFFFF",
         "icons": [{"src": logo_src, "sizes": "any", "type": logo_type}],
     }
     return app.response_class(json.dumps(body), mimetype="application/manifest+json")
