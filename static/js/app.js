@@ -409,4 +409,56 @@
     });
   }
 
+
+
+  // Filter the full county directory by counties, constituencies, wards and common local names.
+  const countyFilter = document.querySelector('[data-county-filter]');
+  const countyCards = Array.from(document.querySelectorAll('[data-county-card]'));
+  const countyCount = document.querySelector('[data-county-result-count]');
+  const countyEmpty = document.querySelector('[data-county-empty]');
+  if (countyFilter && countyCards.length) {
+    const applyCountyFilter = () => {
+      const query = (countyFilter.value || '').trim().toLocaleLowerCase();
+      let visible = 0;
+      countyCards.forEach((card) => {
+        const haystack = (card.getAttribute('data-search-text') || card.textContent || '').toLocaleLowerCase();
+        const show = !query || haystack.includes(query);
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+      if (countyCount) countyCount.textContent = query ? `${visible} matching county${visible === 1 ? '' : 'ies'}` : `${countyCards.length} counties`;
+      if (countyEmpty) countyEmpty.hidden = visible > 0;
+    };
+    countyFilter.addEventListener('input', applyCountyFilter);
+    applyCountyFilter();
+  }
+
+
+
+  // Narrow each county/constituency page without forcing visitors through a long list.
+  const placeFilter = document.querySelector('[data-place-filter]');
+  const placeCards = Array.from(document.querySelectorAll('[data-place-card]'));
+  const placeResultCount = document.querySelector('[data-place-result-count]');
+  if (placeFilter && placeCards.length) {
+    const applyPlaceFilter = () => {
+      const query = (placeFilter.value || '').trim().toLocaleLowerCase();
+      let visible = 0;
+      placeCards.forEach((card) => {
+        const haystack = (card.getAttribute('data-search-text') || card.textContent || '').toLocaleLowerCase();
+        const show = !query || haystack.includes(query);
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+      document.querySelectorAll('[data-place-group]').forEach((group) => {
+        group.hidden = !group.querySelector('[data-place-card]:not([hidden])');
+      });
+      document.querySelectorAll('[data-place-section]').forEach((section) => {
+        section.hidden = !section.querySelector('[data-place-card]:not([hidden])');
+      });
+      if (placeResultCount) placeResultCount.textContent = `${visible} matching option${visible === 1 ? '' : 's'}`;
+    };
+    placeFilter.addEventListener('input', applyPlaceFilter);
+    applyPlaceFilter();
+  }
+
 })();

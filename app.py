@@ -15,7 +15,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote_plus
 
 import qrcode
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -26,6 +26,11 @@ from flask import (
 from markupsafe import Markup
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from places import (
+    COUNTY_CONSTITUENCIES, COUNTY_SUMMARIES, FINE_AREAS, all_known_localities,
+    county_by_slug, county_fine_areas, constituency_by_slug, selector_data,
+    slugify, ward_map
+)
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -132,6 +137,10 @@ DEFAULT_SETTINGS = {
     "fee_land_sale": "1000",
     "fee_property_sale": "1000",
     "fee_featured": "300",
+    "boost_fee_vip": "1000",
+    "boost_fee_vvip": "2500",
+    "boost_duration_days_vip": "7",
+    "boost_duration_days_vvip": "14",
     "listing_expiry_days": "14",
     "public_base_url": os.environ.get("PUBLIC_BASE_URL", ""),
     "terms_notice": "Never pay a deposit before independently confirming the property and the person receiving payment.",
@@ -188,6 +197,12 @@ CREATE TABLE IF NOT EXISTS listings (
     amenities TEXT NOT NULL DEFAULT '',
     water_quality TEXT NOT NULL DEFAULT '',
     location_name TEXT NOT NULL,
+    county TEXT NOT NULL DEFAULT '',
+    constituency TEXT NOT NULL DEFAULT '',
+    ward TEXT NOT NULL DEFAULT '',
+    local_area TEXT NOT NULL DEFAULT '',
+    external_url TEXT NOT NULL DEFAULT '',
+    boost_tier TEXT NOT NULL DEFAULT '',
     landmarks TEXT NOT NULL DEFAULT '',
     latitude REAL,
     longitude REAL,
@@ -282,6 +297,21 @@ CREATE TABLE IF NOT EXISTS auth_attempts (
     window_started TEXT NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS boost_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    owner_id INTEGER NOT NULL,
+    tier TEXT NOT NULL CHECK(tier IN ('vip','vvip')),
+    fee_amount REAL NOT NULL DEFAULT 0,
+    payment_reference TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(listing_id) REFERENCES listings(id),
+    FOREIGN KEY(owner_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_boost_requests_status ON boost_requests(status, created_at);
 CREATE TABLE IF NOT EXISTS market_discoveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -332,7 +362,15 @@ def init_db() -> None:
                 "website_url": "TEXT NOT NULL DEFAULT ''",
                 "social_url": "TEXT NOT NULL DEFAULT ''",
             },
-            "listings": {"water_quality": "TEXT NOT NULL DEFAULT ''"},
+            "listings": {
+                "water_quality": "TEXT NOT NULL DEFAULT ''",
+                "county": "TEXT NOT NULL DEFAULT ''",
+                "constituency": "TEXT NOT NULL DEFAULT ''",
+                "ward": "TEXT NOT NULL DEFAULT ''",
+                "local_area": "TEXT NOT NULL DEFAULT ''",
+                "external_url": "TEXT NOT NULL DEFAULT ''",
+                "boost_tier": "TEXT NOT NULL DEFAULT ''",
+            },
             "visitor_sessions": {
                 "visit_count": "INTEGER NOT NULL DEFAULT 1",
                 "last_visit_at": "TEXT NOT NULL DEFAULT ''",
@@ -799,6 +837,8 @@ def inject_globals():
         "current_year": datetime.now().year,
         "current_date": datetime.now(timezone.utc).date().isoformat(),
         "storage_warning": bool(os.environ.get("RENDER_SERVICE_ID") or os.environ.get("RENDER")) and DATA_DIR.resolve() == (BASE_DIR / "instance").resolve(),
+        "place_selector_data": selector_data(),
+        "slugify": slugify,
     }
 
 
@@ -859,8 +899,9 @@ def public_listings(where: str = "", params: tuple = (), limit: int = 100):
     if where:
         sql += " AND " + where
     sql += " AND l.last_confirmed_at >= ?"
-    sql += " ORDER BY CASE WHEN l.featured_until > ? THEN 0 ELSE 1 END, l.posted_at DESC LIMIT ?"
-    return get_db().execute(sql, (*params, freshness_threshold(), now_iso(), limit)).fetchall()
+    sql += " ORDER BY CASE WHEN l.featured_until > ? AND lower(l.boost_tier)='vvip' THEN 0 WHEN l.featured_until > ? AND lower(l.boost_tier)='vip' THEN 1 WHEN l.featured_until > ? THEN 2 ELSE 3 END, l.posted_at DESC LIMIT ?"
+    now = now_iso()
+    return get_db().execute(sql, (*params, freshness_threshold(), now, now, now, limit)).fetchall()
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -873,9 +914,43 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 @app.route("/")
 def index():
-    # The welcome page is intentionally a minimal two-choice gateway. Listings,
-    # prices and search tools belong only inside the finder experience.
-    return render_template("index.html", invite_url=public_base() + "/")
+    focus_order = ["Nairobi", "Kiambu", "Mombasa", "Nakuru", "Kisumu", "Uasin Gishu", "Kajiado", "Machakos", "Kilifi", "Kwale", "Kakamega", "Bungoma"]
+    featured_counties = [{"name": name, "slug": slugify(name), "constituency_count": len(COUNTY_CONSTITUENCIES[name])}
+                         for name in focus_order if name in COUNTY_CONSTITUENCIES]
+    return render_template("index.html", invite_url=public_base() + "/", featured_counties=featured_counties)
+
+
+def build_listing_location(form, existing=None):
+    """Validate the owner's Kenya location hierarchy and build its public label."""
+    existing = existing or {}
+    def get_existing(key):
+        try:
+            return existing[key] or ""
+        except (KeyError, IndexError, TypeError):
+            return ""
+    raw_county = (form.get("county") or get_existing("county") or "").strip()
+    county = next((name for name in COUNTY_CONSTITUENCIES if name.casefold() == raw_county.casefold() or slugify(name) == slugify(raw_county)), "")
+    raw_constituency = (form.get("constituency") or get_existing("constituency") or "").strip()
+    constituency = next((name for name in COUNTY_CONSTITUENCIES.get(county, []) if name.casefold() == raw_constituency.casefold() or slugify(name) == slugify(raw_constituency)), "")
+    if not county or not constituency:
+        return {"county": county, "constituency": constituency, "ward": "", "local_area": "", "location_name": ""}
+    known_localities = selector_data().get(county, {}).get(constituency, [])
+    raw_ward = (form.get("area_select") or form.get("ward") or get_existing("ward") or "").strip()
+    ward = next((name for name in known_localities if name.casefold() == raw_ward.casefold() or slugify(name) == slugify(raw_ward)), "")
+    raw_local = (form.get("local_area") or get_existing("local_area") or "").strip()[:180]
+    # Existing listings with no separate structured fields can keep their address
+    # while a landlord completes the hierarchy on the next edit.
+    if not ward and not raw_local and not (form.get("county") or form.get("constituency")):
+        old_label = (form.get("location_name") or get_existing("location_name") or "").strip()[:180]
+        raw_local = old_label
+    most_specific = raw_local or ward or constituency
+    parts = []
+    for part in (most_specific, constituency, county):
+        if part and part.casefold() not in [p.casefold() for p in parts]:
+            parts.append(part)
+    label = ", ".join(parts)[:180]
+    return {"county": county, "constituency": constituency, "ward": ward, "local_area": raw_local,
+            "location_name": label}
 
 
 def _search_tokens(value: str) -> list[str]:
@@ -915,7 +990,7 @@ def _fuzzy_search_score(query: str, searchable_text: str) -> float:
 def _listing_search_text(row) -> str:
     category_label = CATEGORY_META.get(row["category"], {}).get("label", "")
     return " ".join(str(row[key] or "") for key in (
-        "title", "description", "location_name", "landmarks", "property_type", "amenities", "water_quality"
+        "title", "description", "location_name", "landmarks", "property_type", "amenities", "water_quality", "county", "constituency", "ward", "local_area"
     )) + " " + category_label
 
 
@@ -980,11 +1055,11 @@ def homes():
     base_where = " AND ".join(base_clauses)
     clauses, params = list(base_clauses), list(base_params)
     if q:
-        clauses.append("(l.title LIKE ? OR l.description LIKE ? OR l.location_name LIKE ? OR l.landmarks LIKE ? OR l.property_type LIKE ? OR l.amenities LIKE ? OR l.water_quality LIKE ?)")
-        params.extend([f"%{q}%"] * 7)
+        clauses.append("(l.title LIKE ? OR l.description LIKE ? OR l.location_name LIKE ? OR l.landmarks LIKE ? OR l.property_type LIKE ? OR l.amenities LIKE ? OR l.water_quality LIKE ? OR l.county LIKE ? OR l.constituency LIKE ? OR l.ward LIKE ? OR l.local_area LIKE ?)")
+        params.extend([f"%{q}%"] * 11)
     if location:
-        clauses.append("(l.location_name LIKE ? OR l.landmarks LIKE ?)")
-        params.extend([f"%{location}%", f"%{location}%"])
+        clauses.append("(l.location_name LIKE ? OR l.landmarks LIKE ? OR l.county LIKE ? OR l.constituency LIKE ? OR l.ward LIKE ? OR l.local_area LIKE ?)")
+        params.extend([f"%{location}%"] * 6)
     where = " AND ".join(clauses)
     results = public_listings(where, tuple(params), 300)
     fuzzy_used = False
@@ -1021,7 +1096,221 @@ def homes():
         types=CATEGORY_META.get(category, {}).get("types", []),
         sorted_by_distance=bool(user_lat and user_lon), fuzzy_used=fuzzy_used,
         category_meta=category_meta,
+        external_searches=external_property_searches(" ".join(x for x in (q, location) if x), category),
+        featured_area_cards=[
+            {"name":"Nairobi","slug":"nairobi"}, {"name":"Kiambu","slug":"kiambu"},
+            {"name":"Mombasa","slug":"mombasa"}, {"name":"Nakuru","slug":"nakuru"},
+            {"name":"Kisumu","slug":"kisumu"}, {"name":"Uasin Gishu","slug":"uasin-gishu"}
+        ],
     )
+
+
+def _place_category():
+    requested = request.args.get("category", "residential").strip()
+    return requested if requested in visible_categories() else ("residential" if "residential" in visible_categories() else next(iter(visible_categories()), "residential"))
+
+
+def _property_search_phrase(category: str) -> str:
+    return {
+        "residential": "houses apartments homes for rent",
+        "short_stay": "hotels guest houses furnished stays",
+        "commercial": "shops offices commercial premises",
+        "industrial": "warehouses godowns industrial yards",
+        "land_sale": "land plots for sale",
+        "property_sale": "houses apartments property for sale",
+    }.get(category, "property listings")
+
+
+def external_property_searches(area: str, category: str = "residential") -> list[dict]:
+    """Create safe outbound portal-search shortcuts without copying inventory."""
+    phrase = _property_search_phrase(category)
+    area = (area or "").strip()
+    query = f'{phrase} "{area}" Kenya' if area else f"{phrase} Kenya"
+    if category == "short_stay":
+        portals = [
+            ("Airbnb", "airbnb.com"),
+            ("Booking.com", "booking.com"),
+            ("Jiji Kenya", "jiji.co.ke"),
+            ("BuyRentKenya", "buyrentkenya.com"),
+        ]
+    else:
+        portals = [
+            ("BuyRentKenya", "buyrentkenya.com"),
+            ("Property24", "property24.co.ke"),
+            ("Jiji Kenya", "jiji.co.ke"),
+        ]
+    return [{"label": label, "url": "https://www.google.com/search?q=" + quote_plus(f"site:{domain} {query}")}
+            for label, domain in portals]
+
+
+def _place_listing_results(terms: list[str], limit: int = 300, county: str | None = None,
+                           constituency: str | None = None):
+    """Search a place page without leaking results from neighbouring locations."""
+    terms = list(dict.fromkeys(t.strip() for t in terms if t and t.strip()))[:150]
+    if not terms:
+        return []
+    scope_clauses, scope_params = [], []
+    if county:
+        scope_clauses.append("l.county=?")
+        scope_params.append(county)
+    if constituency:
+        scope_clauses.append("l.constituency=?")
+        scope_params.append(constituency)
+    match_clauses, match_params = [], []
+    for term in terms:
+        match_clauses.append("(lower(COALESCE(l.location_name,'')) LIKE ? OR lower(COALESCE(l.landmarks,'')) LIKE ? OR lower(COALESCE(l.ward,'')) LIKE ? OR lower(COALESCE(l.local_area,'')) LIKE ?)")
+        pattern = f"%{term.casefold()}%"
+        match_params.extend([pattern, pattern, pattern, pattern])
+    match_sql = "(" + " OR ".join(match_clauses) + ")"
+    where = " AND ".join([*scope_clauses, match_sql])
+    params = tuple([*scope_params, *match_params])
+    try:
+        return public_listings(where, params, limit)
+    except Exception:
+        # Retain the county/constituency scope if an older SQLite build imposes
+        # a tighter bind-parameter limit than expected.
+        fallback = " AND ".join([*scope_clauses,
+            "(lower(COALESCE(l.location_name,'')) LIKE ? OR lower(COALESCE(l.landmarks,'')) LIKE ? OR lower(COALESCE(l.ward,'')) LIKE ? OR lower(COALESCE(l.local_area,'')) LIKE ?)"])
+        pattern = f"%{terms[0].casefold()}%"
+        return public_listings(fallback, tuple([*scope_params, pattern, pattern, pattern, pattern]), limit)
+
+
+def published_area_cards(county: str, constituency: str | None = None) -> list[dict]:
+    """Return curated local-area links plus exact locality names on live listings.
+
+    Owner-entered locations become discoverable without requiring a code update,
+    but only after the listing is genuinely public and has passed platform checks.
+    """
+    cards = [row.copy() for row in county_fine_areas(county)
+             if not constituency or row.get("constituency") == constituency]
+    seen = {row["slug"] for row in cards}
+    where = "l.county=?"
+    params: tuple = (county,)
+    if constituency:
+        where += " AND l.constituency=?"
+        params = (county, constituency)
+    for row in public_listings(where, params, 10000):
+        name = (row["local_area"] or row["ward"] or "").strip()
+        if not name:
+            continue
+        slug = slugify(name)
+        if not slug or slug in seen:
+            continue
+        row_constituency = (row["constituency"] or constituency or "").strip()
+        cards.append({"name": name, "slug": slug, "constituency": row_constituency})
+        seen.add(slug)
+    return cards
+
+
+def _place_context(county: str, area: str, category: str, listings: list, related: list | None = None):
+    return {
+        "county": county,
+        "area": area,
+        "category": category,
+        "listings": listings,
+        "other_sites": external_property_searches(f"{area}, {county}", category),
+        "maps_url": "https://www.google.com/maps/search/?api=1&query=" + quote_plus(f"{area}, {county}, Kenya"),
+        "related_places": related or [],
+    }
+
+
+@app.route("/places")
+def places_index():
+    counties = [{"name": name, "slug": slugify(name), "constituency_count": len(constituencies),
+                 "summary": COUNTY_SUMMARIES.get(name, f"Browse homes, land and commercial property by constituency and local area across {name} County."),
+                 "search_terms": " ".join([name, *constituencies, *all_known_localities(name)]),
+                 "counties": None}
+                for name, constituencies in sorted(COUNTY_CONSTITUENCIES.items())]
+    focus_order = ["Nairobi", "Kiambu", "Kajiado", "Machakos", "Nakuru", "Mombasa", "Murang'a", "Kisumu", "Kilifi", "Nyeri", "Uasin Gishu", "Laikipia"]
+    counties.sort(key=lambda row: (focus_order.index(row["name"]) if row["name"] in focus_order else 99, row["name"]))
+    return render_template("places_index.html", counties=counties)
+
+
+@app.route("/places/<county_slug>")
+def county_page(county_slug: str):
+    county = county_by_slug(county_slug)
+    if not county:
+        abort(404)
+    category = _place_category()
+    constituency_names = COUNTY_CONSTITUENCIES[county]
+    wards = ward_map(county)
+    areas = published_area_cards(county)
+    terms = [county, *constituency_names, *[a["name"] for a in areas]]
+    listings = _place_listing_results(terms, county=county)
+    summary = COUNTY_SUMMARIES.get(county, f"Browse property opportunities throughout {county} County. Use the constituency directory and local-area links to narrow your search. Owners can publish an exact neighbourhood, ward, landmark and property photos.")
+    constituency_cards = [{"name": con, "slug": slugify(con), "wards": wards.get(con, [])}
+                          for con in constituency_names]
+    return render_template("place_page.html", page_kind="county", county=county,
+        area=county, summary=summary, category=category, listings=listings,
+        constituency_cards=constituency_cards, area_cards=areas,
+        other_sites=external_property_searches(county, category),
+        maps_url="https://www.google.com/maps/search/?api=1&query=" + quote_plus(f"{county} County, Kenya"),
+        canonical_url=public_base() + request.path)
+
+
+@app.route("/places/<county_slug>/<constituency_slug>")
+def constituency_page(county_slug: str, constituency_slug: str):
+    county = county_by_slug(county_slug)
+    constituency = constituency_by_slug(county, constituency_slug) if county else None
+    if not county or not constituency:
+        abort(404)
+    category = _place_category()
+    wards = ward_map(county).get(constituency, [])
+    area_cards = published_area_cards(county, constituency)
+    area_names = [item["name"] for item in area_cards]
+    terms = [constituency, *wards, *area_names]
+    listings = _place_listing_results(terms, county=county, constituency=constituency)
+    summary = (f"Browse property in {constituency}, {county} County. Narrow the search by ward or neighbourhood, compare locally published listings, or open another property's search on an external portal."
+               if county not in COUNTY_SUMMARIES else f"Explore {constituency} in {county} County with a more exact search by ward, estate, road or neighbourhood. The directory below helps owners and visitors move beyond a broad county search.")
+    # Show other local constituencies nearby as easy navigation instead of a dead end.
+    all_cons = COUNTY_CONSTITUENCIES[county]
+    at = all_cons.index(constituency)
+    nearby = [{"name": name, "slug": slugify(name)} for name in all_cons[max(0, at-2):at] + all_cons[at+1:at+3]]
+    return render_template("place_page.html", page_kind="constituency", county=county,
+        area=constituency, summary=summary, category=category, listings=listings,
+        constituency=constituency, wards=wards, area_cards=area_cards,
+        nearby_constituencies=nearby,
+        other_sites=external_property_searches(f"{constituency}, {county}", category),
+        maps_url="https://www.google.com/maps/search/?api=1&query=" + quote_plus(f"{constituency}, {county}, Kenya"),
+        canonical_url=public_base() + request.path)
+
+
+@app.route("/places/<county_slug>/<constituency_slug>/ward/<ward_slug>")
+def ward_page(county_slug: str, constituency_slug: str, ward_slug: str):
+    county = county_by_slug(county_slug)
+    constituency = constituency_by_slug(county, constituency_slug) if county else None
+    if not county or not constituency:
+        abort(404)
+    ward = next((name for name in ward_map(county).get(constituency, []) if slugify(name) == slugify(ward_slug)), None)
+    if not ward:
+        abort(404)
+    category = _place_category()
+    listings = _place_listing_results([ward], county=county, constituency=constituency)
+    context = _place_context(county, ward, category, listings)
+    return render_template("place_page.html", page_kind="locality", **context,
+        summary=f"Find property listings associated with {ward}, within {constituency}, {county} County. Search by an exact estate, nearby road or landmark, or expand to the wider constituency.",
+        constituency=constituency, parent_slug=slugify(constituency),
+        area_cards=[], wards=[], nearby_constituencies=[], canonical_url=public_base() + request.path)
+
+
+@app.route("/places/<county_slug>/area/<area_slug>")
+def place_area_page(county_slug: str, area_slug: str):
+    county = county_by_slug(county_slug)
+    if not county:
+        abort(404)
+    row = next((area for area in published_area_cards(county) if area["slug"] == slugify(area_slug)), None)
+    if not row:
+        abort(404)
+    category = _place_category()
+    constituency = row["constituency"]
+    related = [{"name": item["name"], "slug": item["slug"], "constituency": item["constituency"]}
+               for item in published_area_cards(county, constituency) if item["slug"] != row["slug"]][:18]
+    listings = _place_listing_results([row["name"]], county=county, constituency=constituency)
+    context = _place_context(county, row["name"], category, listings, related)
+    return render_template("place_page.html", page_kind="locality", **context,
+        summary=f"Explore homes, stays, commercial spaces and property search links for {row['name']} in {constituency}, {county} County. Use the location name together with your budget and property type to narrow the result.",
+        constituency=constituency, parent_slug=slugify(constituency), area_cards=[], wards=[],
+        nearby_constituencies=[], canonical_url=public_base() + request.path)
 
 @app.route("/listing/<int:listing_id>")
 def listing_detail(listing_id: int):
@@ -1298,6 +1587,48 @@ def partner_dashboard():
     return render_template("partner_dashboard.html", listings=listings, interests=interests, stats=stats)
 
 
+@app.route("/partner/listings/<int:listing_id>/boost", methods=["GET", "POST"])
+@partner_required
+def partner_boost(listing_id):
+    user = get_current_user()
+    listing = get_db().execute("SELECT * FROM listings WHERE id=? AND owner_id=?", (listing_id, user["id"])).fetchone()
+    if not listing:
+        abort(404)
+    requests_for_listing = get_db().execute("SELECT * FROM boost_requests WHERE listing_id=? AND owner_id=? ORDER BY created_at DESC", (listing_id, user["id"])).fetchall()
+    if request.method == "POST":
+        tier = (request.form.get("tier") or "").strip().lower()
+        if tier not in {"vip", "vvip"}:
+            flash("Choose either VIP or VVIP visibility.", "error")
+            return redirect(url_for("partner_boost", listing_id=listing_id))
+        if not (listing["status"] == "available" and listing["approval_status"] == "approved" and listing["payment_status"] == "paid" and listing["property_verified"]):
+            flash("Boost requests open once this property is live and approved. Finish the normal listing checks first.", "warning")
+            return redirect(url_for("partner_boost", listing_id=listing_id))
+        pending = get_db().execute("SELECT id FROM boost_requests WHERE listing_id=? AND status='pending' LIMIT 1", (listing_id,)).fetchone()
+        if pending:
+            flash("A boost payment is already waiting for admin review for this property.", "warning")
+            return redirect(url_for("partner_boost", listing_id=listing_id))
+        payment_reference = request.form.get("payment_reference", "").strip()[:120]
+        if not payment_reference:
+            flash("Enter the payment transaction/reference code. A real boost is applied only after an administrator reconciles it.", "error")
+            return redirect(url_for("partner_boost", listing_id=listing_id))
+        fee_key = "boost_fee_vvip" if tier == "vvip" else "boost_fee_vip"
+        try:
+            fee_amount = max(0, float(setting(fee_key, DEFAULT_SETTINGS[fee_key])))
+        except (ValueError, TypeError):
+            fee_amount = float(DEFAULT_SETTINGS[fee_key])
+        timestamp = now_iso()
+        get_db().execute("INSERT INTO boost_requests(listing_id,owner_id,tier,fee_amount,payment_reference,status,created_at,updated_at) VALUES(?,?,?,?,?,'pending',?,?)",
+            (listing_id, user["id"], tier, fee_amount, payment_reference, timestamp, timestamp))
+        audit("boost_payment_submitted", "listing", listing_id, f"Tier={tier}; fee={fee_amount}; reference supplied")
+        flash("Boost request submitted. It will be applied after the admin confirms payment and reviews the request.", "success")
+        return redirect(url_for("partner_boost", listing_id=listing_id))
+    return render_template("partner_boost.html", listing=listing, boost_requests=requests_for_listing,
+        vip_fee=setting("boost_fee_vip", DEFAULT_SETTINGS["boost_fee_vip"]),
+        vvip_fee=setting("boost_fee_vvip", DEFAULT_SETTINGS["boost_fee_vvip"]),
+        vip_days=setting("boost_duration_days_vip", DEFAULT_SETTINGS["boost_duration_days_vip"]),
+        vvip_days=setting("boost_duration_days_vvip", DEFAULT_SETTINGS["boost_duration_days_vvip"]))
+
+
 @app.route("/partner/management")
 @partner_required
 def partner_management():
@@ -1318,7 +1649,9 @@ def partner_new_listing():
         property_type = request.form.get("property_type", "").strip()[:120]
         title = request.form.get("title", "").strip()[:180]
         description = request.form.get("description", "").strip()[:5000]
-        location_name = request.form.get("location_name", "").strip()[:180]
+        location = build_listing_location(request.form)
+        location_name = location["location_name"]
+        external_url = safe_external_url(request.form.get("external_url", ""))
         landmarks = request.form.get("landmarks", "").strip()[:1200]
         price_period = request.form.get("price_period", "per month").strip()
         property_condition = request.form.get("property_condition", "").strip()[:120]
@@ -1331,7 +1664,7 @@ def partner_new_listing():
             bathrooms = int(request.form.get("bathrooms", "") or 0) or None
         except ValueError:
             flash("Check that rent, deposit and bedroom fields contain valid numbers.", "error")
-            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
+            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
         floor_area = request.form.get("floor_area", "").strip()[:80]
         amenities = request.form.get("amenities", "").strip()[:1200]
         water_quality = request.form.get("water_quality", "").strip()[:180]
@@ -1342,10 +1675,10 @@ def partner_new_listing():
             if longitude is not None and not -180 <= longitude <= 180: raise ValueError()
         except ValueError:
             flash("Map coordinates are not valid. Use the map pin or leave coordinates blank for now.", "error")
-            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
-        if not title or not property_type or not location_name or price_amount < 0:
-            flash("Please complete property name, type, location and price.", "error")
-            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
+            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
+        if not title or not property_type or not location_name or not location["county"] or not location["constituency"] or not (location["ward"] or location["local_area"]) or price_amount < 0:
+            flash("Please complete property name, type, price, county, constituency and a ward/neighbourhood or exact local area.", "error")
+            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
         if latitude is None or longitude is None:
             flash("Add the property's map coordinates to help house seekers reach the real location. You can save this listing, but it cannot be approved until its location is checked.", "info")
         image_names = []
@@ -1356,22 +1689,22 @@ def partner_new_listing():
         except ValueError as exc:
             for name in image_names: (LISTING_UPLOAD_DIR / name).unlink(missing_ok=True)
             flash(str(exc), "error")
-            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
+            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
         if not image_names:
             flash("Upload at least one genuine property photo so the review team can assess the listing.", "error")
-            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
+            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
         fee = fee_for_category(category)
         payment_reference = request.form.get("payment_reference", "").strip()[:120]
         payment_status = "submitted" if payment_reference else "pending"
-        cur = get_db().execute("""INSERT INTO listings(owner_id,category,property_type,title,description,price_amount,price_period,deposit_amount,bedrooms,bathrooms,floor_area,amenities,water_quality,location_name,landmarks,latitude,longitude,property_condition,images,status,approval_status,payment_status,payment_reference,fee_amount,posted_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','pending',?,?,?,?,?)""",
-            (user["id"], category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, floor_area, amenities, water_quality, location_name, landmarks, latitude, longitude, property_condition, json.dumps(image_names), payment_status, payment_reference, fee, now_iso(), now_iso()))
+        cur = get_db().execute("""INSERT INTO listings(owner_id,category,property_type,title,description,price_amount,price_period,deposit_amount,bedrooms,bathrooms,floor_area,amenities,water_quality,location_name,county,constituency,ward,local_area,external_url,landmarks,latitude,longitude,property_condition,images,status,approval_status,payment_status,payment_reference,fee_amount,posted_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','pending',?,?,?,?,?)""",
+            (user["id"], category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, floor_area, amenities, water_quality, location_name, location["county"], location["constituency"], location["ward"], location["local_area"], external_url, landmarks, latitude, longitude, property_condition, json.dumps(image_names), payment_status, payment_reference, fee, now_iso(), now_iso()))
         listing_id = cur.lastrowid
         log_event("property_submitted", request.path, json.dumps({"listing_id": listing_id, "category": category}))
         audit("property_submitted", "listing", listing_id, f"Fee {fee}; payment reference supplied={bool(payment_reference)}")
         flash("Listing saved privately. It will not appear in public searches until the payment is confirmed, your partner account is verified, and an administrator approves the property.", "success")
         return redirect(url_for("partner_dashboard"))
-    return render_template("listing_form.html", form={}, categories=CATEGORY_META, price_periods=PRICE_PERIODS)
+    return render_template("listing_form.html", form={}, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
 
 
 @app.route("/partner/listings/<int:listing_id>/edit", methods=["GET", "POST"])
@@ -1388,7 +1721,9 @@ def partner_edit_listing(listing_id):
         property_type = request.form.get("property_type", "").strip()[:120]
         title = request.form.get("title", "").strip()[:180]
         description = request.form.get("description", "").strip()[:5000]
-        location_name = request.form.get("location_name", "").strip()[:180]
+        location = build_listing_location(request.form, row)
+        location_name = location["location_name"]
+        external_url = safe_external_url(request.form.get("external_url", row["external_url"] or ""))
         landmarks = request.form.get("landmarks", "").strip()[:1200]
         price_period = request.form.get("price_period", "per month").strip()
         condition = request.form.get("property_condition", "").strip()[:120]
@@ -1406,8 +1741,8 @@ def partner_edit_listing(listing_id):
         except ValueError:
             flash("Check the price, room and coordinate fields.", "error")
             return redirect(url_for("partner_edit_listing", listing_id=listing_id))
-        if not title or not property_type or not location_name or price_amount < 0:
-            flash("Property name, type, location and price are required.", "error")
+        if not title or not property_type or not location_name or not location["county"] or not location["constituency"] or not (location["ward"] or location["local_area"]) or price_amount < 0:
+            flash("Property name, type, price, county, constituency and a ward/neighbourhood or exact local area are required.", "error")
             return redirect(url_for("partner_edit_listing", listing_id=listing_id))
         original_names = listing_images(row)
         remove_names = set(request.form.getlist("remove_images"))
@@ -1434,8 +1769,8 @@ def partner_edit_listing(listing_id):
         elif row["payment_status"] == "paid":
             fee = float(row["fee_amount"])
         # Any substantive edit puts the property back into the review queue.
-        get_db().execute("""UPDATE listings SET category=?,property_type=?,title=?,description=?,price_amount=?,price_period=?,deposit_amount=?,bedrooms=?,bathrooms=?,floor_area=?,amenities=?,water_quality=?,location_name=?,landmarks=?,latitude=?,longitude=?,property_condition=?,images=?,status='pending',approval_status='pending',payment_status=?,payment_reference=?,fee_amount=?,property_verified=0,last_confirmed_at='',updated_at=? WHERE id=? AND owner_id=?""",
-            (category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, request.form.get("floor_area", "").strip()[:80], request.form.get("amenities", "").strip()[:1200], water_quality, location_name, landmarks, latitude, longitude, condition, json.dumps(names), payment_status, payment_reference, fee, now_iso(), listing_id, user["id"]))
+        get_db().execute("""UPDATE listings SET category=?,property_type=?,title=?,description=?,price_amount=?,price_period=?,deposit_amount=?,bedrooms=?,bathrooms=?,floor_area=?,amenities=?,water_quality=?,location_name=?,county=?,constituency=?,ward=?,local_area=?,external_url=?,landmarks=?,latitude=?,longitude=?,property_condition=?,images=?,status='pending',approval_status='pending',payment_status=?,payment_reference=?,fee_amount=?,property_verified=0,last_confirmed_at='',updated_at=? WHERE id=? AND owner_id=?""",
+            (category, property_type, title, description, price_amount, price_period, deposit_amount, bedrooms, bathrooms, request.form.get("floor_area", "").strip()[:80], request.form.get("amenities", "").strip()[:1200], water_quality, location_name, location["county"], location["constituency"], location["ward"], location["local_area"], external_url, landmarks, latitude, longitude, condition, json.dumps(names), payment_status, payment_reference, fee, now_iso(), listing_id, user["id"]))
         # Remove deleted photo files only if no other listing references them.
         if remove_names:
             other_rows = get_db().execute("SELECT images FROM listings WHERE id<>?", (listing_id,)).fetchall()
@@ -1452,7 +1787,7 @@ def partner_edit_listing(listing_id):
         flash("Listing updated and returned to review. It stays private until the property is checked again. If its category changed, the new fee must be paid.", "success")
         return redirect(url_for("partner_dashboard"))
     form = dict(row)
-    return render_template("listing_form.html", form=form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, edit_mode=True, existing_images=listing_images(row), existing_listing=row)
+    return render_template("listing_form.html", form=form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, edit_mode=True, existing_images=listing_images(row), existing_listing=row, location_catalog=selector_data())
 
 
 @app.route("/partner/listings/<int:listing_id>/availability", methods=["POST"])
@@ -1873,6 +2208,54 @@ def save_opt_in_location():
     return jsonify({"ok": True, "latitude": lat, "longitude": lon})
 
 
+@app.route("/manage-admin/boost-requests")
+@admin_required
+def admin_boost_requests():
+    rows = get_db().execute("""SELECT b.*,l.title AS listing_title,l.status AS listing_status,l.approval_status,l.payment_status AS listing_payment_status,l.property_verified,u.full_name AS owner_name,u.phone AS owner_phone
+        FROM boost_requests b JOIN listings l ON l.id=b.listing_id JOIN users u ON u.id=b.owner_id
+        ORDER BY CASE b.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, b.created_at DESC LIMIT 500""").fetchall()
+    return render_template("admin_boost_requests.html", boost_requests=rows)
+
+
+@app.post("/manage-admin/boost-requests/<int:request_id>/action")
+@admin_required
+def admin_boost_action(request_id):
+    admin = get_current_user()
+    boost = get_db().execute("SELECT b.*,l.status AS listing_status,l.approval_status,l.payment_status AS listing_payment_status,l.property_verified FROM boost_requests b JOIN listings l ON l.id=b.listing_id WHERE b.id=?", (request_id,)).fetchone()
+    if not boost:
+        abort(404)
+    if boost["status"] != "pending":
+        flash("This boost request was already reviewed.", "warning")
+        return redirect(url_for("admin_boost_requests"))
+    action = request.form.get("action", "").strip().lower()
+    note = request.form.get("admin_note", "").strip()[:600]
+    stamp = now_iso()
+    if action == "approve":
+        if not (boost["listing_status"] == "available" and boost["approval_status"] == "approved" and boost["listing_payment_status"] == "paid" and boost["property_verified"]):
+            flash("Cannot activate a boost on a property that is not currently live, paid and approved.", "error")
+            return redirect(url_for("admin_boost_requests"))
+        tier = boost["tier"]
+        duration_key = "boost_duration_days_vvip" if tier == "vvip" else "boost_duration_days_vip"
+        try:
+            days = max(1, min(365, int(setting(duration_key, DEFAULT_SETTINGS[duration_key]))))
+        except (ValueError, TypeError):
+            days = int(DEFAULT_SETTINGS[duration_key])
+        active_until = (datetime.now(timezone.utc) + timedelta(days=days)).replace(microsecond=0).isoformat()
+        get_db().execute("UPDATE listings SET boost_tier=?,featured_until=?,updated_at=? WHERE id=?", (tier, active_until, stamp, boost["listing_id"]))
+        get_db().execute("UPDATE boost_requests SET status='approved',admin_note=?,updated_at=? WHERE id=?", (note or f"Payment manually reviewed by administrator {admin['id']}", stamp, request_id))
+        audit("boost_activated", "listing", boost["listing_id"], f"{tier.upper()} visibility for {days} days; boost request {request_id}")
+        flash(f"{tier.upper()} placement is active for {days} days. It will appear ahead of standard listings in supported search results.", "success")
+    elif action == "reject":
+        if not note:
+            note = "Payment or boost request could not be approved. Contact support if you believe this is an error."
+        get_db().execute("UPDATE boost_requests SET status='rejected',admin_note=?,updated_at=? WHERE id=?", (note, stamp, request_id))
+        audit("boost_rejected", "listing", boost["listing_id"], f"Boost request {request_id}: {note}")
+        flash("Boost request rejected. It was not activated.", "success")
+    else:
+        flash("Choose approve or reject.", "error")
+    return redirect(url_for("admin_boost_requests"))
+
+
 @app.route("/manage-admin/settings", methods=["GET", "POST"])
 @admin_required
 def admin_settings():
@@ -1949,12 +2332,21 @@ def admin_settings():
                 except ValueError:
                     flash(f"{key.replace('_',' ').title()} must be a non-negative number.", "error")
                     return redirect(url_for("admin_settings"))
-            if key == "listing_expiry_days":
+            if key in {"listing_expiry_days", "boost_duration_days_vip", "boost_duration_days_vvip"}:
                 try:
                     days = int(value)
                     if not 1 <= days <= 365: raise ValueError()
+                    value = str(days)
                 except ValueError:
-                    flash("Listing expiry must be between 1 and 365 days.", "error")
+                    flash(f"{key.replace('_',' ').title()} must be between 1 and 365 days.", "error")
+                    return redirect(url_for("admin_settings"))
+            if key in {"boost_fee_vip", "boost_fee_vvip"}:
+                try:
+                    amount = float(value)
+                    if amount < 0 or amount > 100000000: raise ValueError()
+                    value = str(round(amount, 2))
+                except ValueError:
+                    flash(f"{key.replace('_',' ').title()} must be a non-negative amount.", "error")
                     return redirect(url_for("admin_settings"))
             set_setting(key, value)
         new_password = request.form.get("new_admin_password", "")
@@ -2170,20 +2562,54 @@ def icon_svg():
 @app.route("/robots.txt")
 def robots_txt():
     base = public_base()
-    return app.response_class(f"User-agent: *\nDisallow: {ADMIN_ROOT}\nDisallow: /manage-admin/\nDisallow: /partner/\nDisallow: /login\nDisallow: /join\nDisallow: /media/\nSitemap: {base}/sitemap.xml\n", mimetype="text/plain")
+    return app.response_class(f"User-agent: *\nDisallow: {ADMIN_ROOT}\nDisallow: /manage-admin/\nDisallow: /partner/\nDisallow: /login\nDisallow: /join\nSitemap: {base}/sitemap.xml\n", mimetype="text/plain")
 
 
 @app.route("/sitemap.xml")
 def sitemap_xml():
     from xml.sax.saxutils import escape
     base = public_base()
-    locs = [base + "/", base + "/homes", base + "/partners"]
+    locs = [base + "/", base + "/homes", base + "/partners", base + "/places"]
+    for county, constituencies in COUNTY_CONSTITUENCIES.items():
+        county_path = url_for("county_page", county_slug=slugify(county))
+        locs.append(base + county_path)
+        for constituency in constituencies:
+            constituency_path = url_for("constituency_page", county_slug=slugify(county), constituency_slug=slugify(constituency))
+            locs.append(base + constituency_path)
+    # Submit fine-area pages only when a real, public property listing supports them.
+    # The full local directory remains crawlable through county/constituency pages,
+    # while empty generated location pages stay out of the search-engine sitemap.
     rows = public_listings(limit=10000)
     for row in rows:
         locs.append(base + url_for("listing_detail", listing_id=row["id"]))
+        county = (row["county"] or "").strip()
+        if county and county in COUNTY_CONSTITUENCIES:
+            exact_area = (row["local_area"] or row["ward"] or "").strip()
+            if exact_area:
+                locs.append(base + url_for("place_area_page", county_slug=slugify(county), area_slug=slugify(exact_area)))
+            ward = (row["ward"] or "").strip()
+            constituency = (row["constituency"] or "").strip()
+            if ward and constituency and ward in ward_map(county).get(constituency, []):
+                locs.append(base + url_for("ward_page", county_slug=slugify(county), constituency_slug=slugify(constituency), ward_slug=slugify(ward)))
+    locs = list(dict.fromkeys(locs))
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + "".join(f"<url><loc>{escape(loc)}</loc></url>" for loc in locs) + "</urlset>"
     return app.response_class(xml, mimetype="application/xml")
 
+
+
+@app.route("/llms.txt")
+def llms_txt():
+    base = public_base()
+    body = [
+        f"# {setting('site_name', 'PataMahali')}",
+        "", setting("site_description", "Kenya property discovery and listings."), "",
+        "## Core pages", f"- Home: {base}/", f"- Search properties: {base}/homes",
+        f"- All counties and place directory: {base}/places", f"- Property partners: {base}/partners",
+        "", "## Location coverage", "The directory includes all 47 Kenyan counties and their 290 constituencies, plus curated ward, estate, town, road and locality links where available. Exact localities can also be entered by property owners.",
+        "", "## Listing trust", "A property photo on the home page may be illustrative. A property is advertised as a live listing only after it is submitted by a property partner and passes the platform's payment, identity, location and approval checks.",
+        "", "## Contact", f"- Site: {base}/", f"- Privacy: {base}/privacy", f"- Terms: {base}/terms", ""
+    ]
+    return app.response_class("\n".join(body), mimetype="text/plain")
 
 @app.errorhandler(413)
 def too_large(_error):

@@ -2,7 +2,7 @@
   <a class="property-image" data-property-preview href="{{ url_for('listing_detail', listing_id=item['id']) }}" aria-label="View {{ item['title'] }}">
     {% set imgs = listing_images(item) %}
     {% if imgs %}<img loading="lazy" src="{{ url_for('listing_media', filename=imgs[0]) }}" alt="{{ item['title'] }} property photo">{% else %}<div class="image-placeholder"><span>Photo unavailable</span></div>{% endif %}
-    {% if item['featured_until'] and item['featured_until'] > '' %}<span class="photo-chip">Featured</span>{% endif %}
+    {% if item['featured_until'] and item['featured_until'] > current_date %}{% if item['boost_tier']=='vvip' %}<span class="photo-chip boost-tier-pill boost-vvip">VVIP · Top placement</span>{% elif item['boost_tier']=='vip' %}<span class="photo-chip boost-tier-pill boost-vip">VIP · Boosted</span>{% else %}<span class="photo-chip">Featured</span>{% endif %}{% endif %}
   </a>
   <div class="property-card-body">
     <div class="listing-price-band"><strong>{{ money(item['price_amount']) }}</strong><span>{{ item['price_period'] }}</span></div>
