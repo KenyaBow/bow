@@ -647,6 +647,29 @@ def safe_external_url(value: str) -> str:
     return value
 
 
+_BLOCKED_PROPERTY_PORTAL_DOMAINS = (
+    "property254.co.ke", "property254.com", "property24.co.ke",
+    "buyrentkenya.com", "buyrentkenya.co.ke", "jiji.co.ke",
+)
+
+
+def is_competitor_property_portal_url(value: str) -> bool:
+    """Identify property-marketplace URLs the public site must not promote."""
+    raw = safe_external_url(value)
+    if not raw:
+        return False
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if any(host == domain or host.endswith("." + domain)
+           for domain in _BLOCKED_PROPERTY_PORTAL_DOMAINS):
+        return True
+    # Also prevent a Google search shortcut from bypassing the host check.
+    if host in {"google.com", "www.google.com", "google.co.ke", "www.google.co.ke"}:
+        search_text = (parsed.query + " " + parsed.fragment).lower()
+        return any(domain in search_text for domain in _BLOCKED_PROPERTY_PORTAL_DOMAINS)
+    return False
+
+
 def public_base() -> str:
     configured = safe_external_url(setting("public_base_url", "") or os.environ.get("PUBLIC_BASE_URL", ""))
     return configured.rstrip("/") if configured else request.url_root.rstrip("/")
@@ -821,12 +844,13 @@ def inject_globals():
                 continue
             label, target = raw_line.split("|", 1)
             label, target = label.strip(), safe_external_url(target.strip())
-            if label and target:
+            if label and target and not is_competitor_property_portal_url(target):
                 header_resource_links.append({"label": label[:55], "url": target})
     return {
         "site_settings": settings,
         "header_resource_links": header_resource_links,
         "promo_embed_url": safe_video_embed_url(settings.get("promo_video_url", "")),
+        "is_competitor_property_portal_url": is_competitor_property_portal_url,
         "current_user": user,
         "csrf_field": csrf_field,
         "listing_images": listing_images,
@@ -1110,37 +1134,9 @@ def _place_category():
     return requested if requested in visible_categories() else ("residential" if "residential" in visible_categories() else next(iter(visible_categories()), "residential"))
 
 
-def _property_search_phrase(category: str) -> str:
-    return {
-        "residential": "houses apartments homes for rent",
-        "short_stay": "hotels guest houses furnished stays",
-        "commercial": "shops offices commercial premises",
-        "industrial": "warehouses godowns industrial yards",
-        "land_sale": "land plots for sale",
-        "property_sale": "houses apartments property for sale",
-    }.get(category, "property listings")
-
-
 def external_property_searches(area: str, category: str = "residential") -> list[dict]:
-    """Create safe outbound portal-search shortcuts without copying inventory."""
-    phrase = _property_search_phrase(category)
-    area = (area or "").strip()
-    query = f'{phrase} "{area}" Kenya' if area else f"{phrase} Kenya"
-    if category == "short_stay":
-        portals = [
-            ("Airbnb", "airbnb.com"),
-            ("Booking.com", "booking.com"),
-            ("Jiji Kenya", "jiji.co.ke"),
-            ("BuyRentKenya", "buyrentkenya.com"),
-        ]
-    else:
-        portals = [
-            ("BuyRentKenya", "buyrentkenya.com"),
-            ("Property24", "property24.co.ke"),
-            ("Jiji Kenya", "jiji.co.ke"),
-        ]
-    return [{"label": label, "url": "https://www.google.com/search?q=" + quote_plus(f"site:{domain} {query}")}
-            for label, domain in portals]
+    """No third-party marketplace promotion: visitors stay within this platform."""
+    return []
 
 
 def _place_listing_results(terms: list[str], limit: int = 300, county: str | None = None,
@@ -1260,7 +1256,7 @@ def constituency_page(county_slug: str, constituency_slug: str):
     area_names = [item["name"] for item in area_cards]
     terms = [constituency, *wards, *area_names]
     listings = _place_listing_results(terms, county=county, constituency=constituency)
-    summary = (f"Browse property in {constituency}, {county} County. Narrow the search by ward or neighbourhood, compare locally published listings, or open another property's search on an external portal."
+    summary = (f"Browse property in {constituency}, {county} County. Narrow the search by ward or neighbourhood and explore locally published listings."
                if county not in COUNTY_SUMMARIES else f"Explore {constituency} in {county} County with a more exact search by ward, estate, road or neighbourhood. The directory below helps owners and visitors move beyond a broad county search.")
     # Show other local constituencies nearby as easy navigation instead of a dead end.
     all_cons = COUNTY_CONSTITUENCIES[county]
@@ -1430,6 +1426,9 @@ def partner_register():
         contact_preference = request.form.get("contact_preference", "whatsapp").strip()
         website_url = safe_external_url(request.form.get("website_url", "").strip())[:300]
         social_url = safe_external_url(request.form.get("social_url", "").strip())[:300]
+        if is_competitor_property_portal_url(website_url) or is_competitor_property_portal_url(social_url):
+            flash("Please use your own website or social profile, not a competing property marketplace.", "error")
+            return render_template("partner_register.html", form=request.form)
         password = request.form.get("password", "")
         identity_type = request.form.get("identity_type", "national_id").strip()
         if contact_preference not in {"whatsapp", "call", "email", "website"}: contact_preference = "whatsapp"
@@ -1553,6 +1552,9 @@ def partner_profile_update():
     preference = request.form.get("contact_preference", "whatsapp").strip()
     website = safe_external_url(request.form.get("website_url", "").strip())[:300]
     social = safe_external_url(request.form.get("social_url", "").strip())[:300]
+    if is_competitor_property_portal_url(website) or is_competitor_property_portal_url(social):
+        flash("Please use your own website or social profile, not a competing property marketplace.", "error")
+        return redirect(url_for("partner_dashboard") + "#contact-profile")
     if preference not in {"whatsapp", "call", "email", "website"}: preference = "whatsapp"
     if not phone:
         flash("Add a phone number so people can contact you.", "error")
@@ -1652,6 +1654,9 @@ def partner_new_listing():
         location = build_listing_location(request.form)
         location_name = location["location_name"]
         external_url = safe_external_url(request.form.get("external_url", ""))
+        if is_competitor_property_portal_url(external_url):
+            flash("Links to competing property marketplaces are not published here. Add your own website or booking page, or leave this optional field blank.", "error")
+            return render_template("listing_form.html", form=request.form, categories=CATEGORY_META, price_periods=PRICE_PERIODS, location_catalog=selector_data())
         landmarks = request.form.get("landmarks", "").strip()[:1200]
         price_period = request.form.get("price_period", "per month").strip()
         property_condition = request.form.get("property_condition", "").strip()[:120]
@@ -1724,6 +1729,9 @@ def partner_edit_listing(listing_id):
         location = build_listing_location(request.form, row)
         location_name = location["location_name"]
         external_url = safe_external_url(request.form.get("external_url", row["external_url"] or ""))
+        if is_competitor_property_portal_url(external_url):
+            flash("Links to competing property marketplaces are not published here. Remove that link and add your own website or booking page, or leave the field blank.", "error")
+            return redirect(url_for("partner_edit_listing", listing_id=listing_id))
         landmarks = request.form.get("landmarks", "").strip()[:1200]
         price_period = request.form.get("price_period", "per month").strip()
         condition = request.form.get("property_condition", "").strip()[:120]
@@ -2304,6 +2312,9 @@ def admin_settings():
             if key == "promo_link" and value and not safe_external_url(value):
                 flash("Campaign destination must be a valid http:// or https:// URL.", "error")
                 return redirect(url_for("admin_settings"))
+            if key == "promo_link" and value and is_competitor_property_portal_url(value):
+                flash("Use your own business destination for promotions, not a competing property marketplace.", "error")
+                return redirect(url_for("admin_settings"))
             if key == "promo_video_url" and value and not safe_video_embed_url(value):
                 flash("Video must be a public YouTube or Vimeo link.", "error")
                 return redirect(url_for("admin_settings"))
@@ -2317,6 +2328,9 @@ def admin_settings():
                     label, target = line.split("|", 1)
                     if not label.strip() or len(label.strip()) > 55 or not safe_external_url(target.strip()):
                         flash(f"Header link line {line_number} needs a label (55 characters max) and a valid http:// or https:// URL.", "error")
+                        return redirect(url_for("admin_settings"))
+                    if is_competitor_property_portal_url(target.strip()):
+                        flash(f"Header link line {line_number} cannot point to a competing property marketplace.", "error")
                         return redirect(url_for("admin_settings"))
             if key == "public_base_url" and value and not safe_external_url(value):
                 flash("Public base URL must begin with https:// or http:// and include a valid host.", "error")
@@ -2360,7 +2374,19 @@ def admin_settings():
         audit("settings_updated", "settings", "all", "Site name, brand, fees and configuration updated")
         flash("Settings saved. New fees apply to newly submitted listings; existing invoice amounts stay recorded on their listings.", "success")
         return redirect(url_for("admin_settings"))
-    return render_template("admin_settings.html", settings=all_settings())
+    settings = all_settings()
+    # When an old configuration contains competitor destinations, present the admin
+    # with a cleaned form so saving the settings removes those shortcuts permanently.
+    settings["promo_link"] = "" if is_competitor_property_portal_url(settings.get("promo_link", "")) else settings.get("promo_link", "")
+    allowed_header_lines = []
+    for line in settings.get("header_links", "").splitlines():
+        if "|" not in line:
+            continue
+        _label, _target = line.split("|", 1)
+        if not is_competitor_property_portal_url(_target.strip()):
+            allowed_header_lines.append(line)
+    settings["header_links"] = "\n".join(allowed_header_lines)
+    return render_template("admin_settings.html", settings=settings)
 
 
 @app.route("/manage-admin/backups")

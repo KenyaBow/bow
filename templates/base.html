@@ -32,11 +32,11 @@
         {% endif %}
         {% if current_user and current_user['role'] in ['owner','agent','host','business'] %}<a class="header-more-link" href="{{ url_for('partner_register') }}">List another property <span aria-hidden="true">↗</span></a>{% endif %}
         {% if site_settings.get('show_partner_directory_enabled','1') == '1' %}<a class="header-more-link" href="{{ url_for('partners_directory') }}">Property partners <span aria-hidden="true">↗</span></a>{% endif %}
-        {% if site_settings.get('promo_enabled','0') == '1' and (site_settings.get('promo_title') or site_settings.get('promo_text') or site_settings.get('promo_link')) %}
+        {% if site_settings.get('promo_enabled','0') == '1' and (site_settings.get('promo_title') or site_settings.get('promo_text') or (site_settings.get('promo_link') and not is_competitor_property_portal_url(site_settings.get('promo_link'))) ) %}
           <div class="header-menu-featured">
             {% if site_settings.get('promo_title') %}<strong>{{ site_settings.get('promo_title') }}</strong>{% endif %}
             {% if site_settings.get('promo_text') %}<p>{{ site_settings.get('promo_text') }}</p>{% endif %}
-            {% if site_settings.get('promo_link') %}<a href="{{ site_settings.get('promo_link') }}" target="_blank" rel="noopener noreferrer">{{ site_settings.get('promo_link_label') or 'Explore' }} <span aria-hidden="true">↗</span></a>{% endif %}
+            {% if site_settings.get('promo_link') and not is_competitor_property_portal_url(site_settings.get('promo_link')) %}<a href="{{ site_settings.get('promo_link') }}" target="_blank" rel="noopener noreferrer">{{ site_settings.get('promo_link_label') or 'Explore' }} <span aria-hidden="true">↗</span></a>{% endif %}
           </div>
         {% endif %}
         {% for resource in header_resource_links %}<a class="header-more-link" href="{{ resource.url }}" target="_blank" rel="noopener noreferrer">{{ resource.label }} <span aria-hidden="true">↗</span></a>{% endfor %}

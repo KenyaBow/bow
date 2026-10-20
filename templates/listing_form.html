@@ -25,7 +25,7 @@
       </div>
       <input type="hidden" name="location_name" id="locationNameField" value="{{ form.get('location_name','') }}">
     </div>
-    <label class="full-span">Original advert / booking link (optional)<input name="external_url" type="url" maxlength="1000" value="{{ form.get('external_url','') }}" placeholder="https://the-original-property-advert.example"><small class="field-help">If this property is already advertised on another website, add its direct URL. Visitors can open the original advert from your listing here.</small></label>
+    <label class="full-span">Your own website or booking page (optional)<input name="external_url" type="url" maxlength="1000" value="{{ '' if is_competitor_property_portal_url(form.get('external_url','')) else form.get('external_url','') }}" placeholder="https://your-business.example"><small class="field-help">Visitors can open your own business website or booking page. Links to competing property marketplaces are not published here; leave blank if you do not have your own page.</small></label>
     <label class="full-span">Nearby landmarks<input name="landmarks" maxlength="1200" value="{{ form.get('landmarks','') }}" placeholder="Near the stage, next to..., opposite..."></label>
     <label>Latitude<input name="latitude" id="latitudeInput" type="number" min="-90" max="90" step="any" value="{{ form.get('latitude','') }}" placeholder="-1.204"></label>
     <label>Longitude<input name="longitude" id="longitudeInput" type="number" min="-180" max="180" step="any" value="{{ form.get('longitude','') }}" placeholder="36.782"></label>
