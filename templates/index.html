@@ -7,7 +7,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{ site_settings.get('site_name','PataMahali') }} — Find your next place">
 <meta property="og:description" content="A clearer way to find and list property across Kenya, from county to neighbourhood.">
-<meta property="og:image" content="{{ url_for('static', filename='img/property-scenes/neighbourhood-hero.webp', _external=True) }}">
+<meta property="og:image" content="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=82">
 <script type="application/ld+json">{{ {'@context':'https://schema.org','@type':'WebSite','name':site_settings.get('site_name','PataMahali'),'url':url_for('index',_external=True),'potentialAction':{'@type':'SearchAction','target':url_for('homes',_external=True) ~ '?q={search_term_string}','query-input':'required name=search_term_string'}}|tojson }}</script>
 {% endblock %}
 {% block content %}
@@ -20,7 +20,15 @@
     <nav class="landing-top-links" aria-label="Quick links"><a href="{{ url_for('places_index') }}">Explore Kenya</a><a href="{{ url_for('partners_directory') }}">Property partners</a><a class="landing-owner-link" href="{{ url_for('partner_dashboard') if current_user and current_user['role'] in ['owner','agent','host','business'] else url_for('partner_register') }}">List your property <span aria-hidden="true">↗</span></a></nav>
   </header>
 
-  <section class="landing-v2-hero page-shell">
+  <section class="landing-first-gate page-shell" aria-labelledby="landing-gate-heading">
+    <div class="landing-first-gate-heading"><span class="eyebrow">Welcome to PataMahali</span><h2 id="landing-gate-heading">What brings you here today?</h2><p>Choose your path first. You can always switch later.</p></div>
+    <div class="landing-first-gate-options">
+      <a class="landing-first-gate-option find-gate" href="{{ url_for('homes', category='residential') }}"><span class="first-gate-icon" aria-hidden="true">⌕</span><span><strong>I'm looking for a place</strong><small>Find a rental, home to buy, hotel, Airbnb, land or business space.</small></span><b aria-hidden="true">Explore places ↗</b></a>
+      <a class="landing-first-gate-option list-gate" href="{{ url_for('partner_dashboard') if current_user and current_user['role'] in ['owner','agent','host','business'] else url_for('partner_register') }}"><span class="first-gate-icon" aria-hidden="true">＋</span><span><strong>I want to list a property</strong><small>Join as a landlord, property owner, host or authorised agent.</small></span><b aria-hidden="true">Become a partner ↗</b></a>
+    </div>
+  </section>
+
+  <section class="landing-v2-hero page-shell" id="start-search">
     <div class="landing-hero-copy">
       <div class="landing-availability-note"><span></span> Find it by county, constituency or estate</div>
       <h1>Every kind of place.<br><em>Every corner of Kenya.</em></h1>
@@ -31,30 +39,32 @@
         <button type="submit">Search places <span aria-hidden="true">↗</span></button>
       </form>
       <div class="landing-popular-searches"><span>Popular searches</span><a href="{{ url_for('county_page', county_slug='nairobi') }}">Nairobi</a><a href="{{ url_for('county_page', county_slug='kiambu') }}">Kiambu</a><a href="{{ url_for('county_page', county_slug='mombasa') }}">Mombasa</a><a href="{{ url_for('county_page', county_slug='nakuru') }}">Nakuru</a></div>
-      <div class="landing-gate-row" aria-label="Choose your next step">
-        <a class="landing-gate-card gate-search" href="{{ url_for('homes', category='residential') }}"><span class="landing-gate-icon" aria-hidden="true">⌕</span><span><strong>I'm looking for a place</strong><small>Rent, stay, buy, open a business or find land</small></span><b aria-hidden="true">↗</b></a>
-        <a class="landing-gate-card gate-owner" href="{{ url_for('partner_dashboard') if current_user and current_user['role'] in ['owner','agent','host','business'] else url_for('partner_register') }}"><span class="landing-gate-icon" aria-hidden="true">＋</span><span><strong>I have a property to list</strong><small>Owners, landlords, hosts and authorised agents</small></span><b aria-hidden="true">↗</b></a>
-      </div>
+
     </div>
     <div class="landing-hero-visual">
-      <img src="{{ url_for('static', filename='img/property-scenes/neighbourhood-hero.webp') }}" alt="Illustrative view of homes and apartments along a leafy residential street in Kenya" fetchpriority="high">
+      <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=82" alt="Real stock photograph of a residential home; not an individual property advert" fetchpriority="high">
       <div class="hero-image-caption"><span class="hero-caption-dot"></span><span><strong>Find the right area first</strong><small>Neighbourhood photography is illustrative, not a live property advert.</small></span></div>
       <div class="hero-floating-stamp"><strong>47</strong><span>COUNTIES<br>TO EXPLORE</span></div>
     </div>
   </section>
 
-  <section class="landing-category-section page-shell">
+  <section class="landing-scan-strip page-shell" aria-label="Open PataMahali on another device">
+    <div class="landing-scroll-cue"><a href="#collections"><span class="scroll-cue-mouse" aria-hidden="true"></span><span>Keep scrolling to explore places and property types</span><b aria-hidden="true">↓</b></a></div>
+    <div class="landing-qr-card"><div class="landing-qr-copy"><span class="eyebrow">Take PataMahali with you</span><h2>Open this site on your phone.</h2><p>Scan the code with your phone camera to open the website, share it with a friend or start a property search on the go.</p><a class="button button-primary" href="{{ invite_url }}">Open PataMahali now ↗</a><small>QR code points to the public website homepage.</small></div><a class="landing-qr-image-link" href="{{ url_for('site_qr') }}" target="_blank" rel="noopener" aria-label="Open the website QR code in a new tab"><img src="{{ url_for('site_qr') }}" alt="Scannable QR code to open the PataMahali website" width="176" height="176" loading="lazy"><span>Scan to open</span></a></div>
+  </section>
+
+  <section class="landing-category-section page-shell" id="collections">
     <div class="landing-section-head"><div><span class="eyebrow">Start with what you need</span><h2>One search. Every kind of place.</h2><p>Open a collection, then choose a county or go straight to an estate.</p></div><a class="text-link" href="{{ url_for('places_index') }}">Browse all areas <span aria-hidden="true">→</span></a></div>
     <div class="landing-category-grid">
-      {% if 'residential' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='residential') }}"><img src="{{ url_for('static',filename='img/property-scenes/modern-interior.webp') }}" alt="Illustrative bright apartment interior" loading="lazy"><span class="tile-copy"><strong>Rentals & homes</strong><small>Bedsitters, studios, apartments and family homes</small></span><span class="tile-arrow">↗</span></a>{% endif %}
-      {% if 'short_stay' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='short_stay') }}"><img src="{{ url_for('static',filename='img/property-scenes/apartment-building.webp') }}" alt="Illustrative apartment building" loading="lazy"><span class="tile-copy"><strong>Airbnb, BnBs & stays</strong><small>Furnished stays, guest houses and holiday homes</small></span><span class="tile-arrow">↗</span></a>{% endif %}
-      {% if 'short_stay' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='short_stay',type='Hotel room') }}"><img src="{{ url_for('static',filename='img/property-scenes/modern-interior.webp') }}" alt="Illustrative hotel-style interior" loading="lazy"><span class="tile-copy"><strong>Hotels</strong><small>Rooms, suites and hospitality spaces</small></span><span class="tile-arrow">↗</span></a>{% endif %}
-      {% if 'property_sale' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='property_sale') }}"><img src="{{ url_for('static',filename='img/property-scenes/neighbourhood-hero.webp') }}" alt="Illustrative homes in a residential neighbourhood" loading="lazy"><span class="tile-copy"><strong>Property for sale</strong><small>Houses, apartments and investment buildings</small></span><span class="tile-arrow">↗</span></a>{% endif %}
-      {% if 'land_sale' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='land_sale') }}"><img src="{{ url_for('static',filename='img/property-scenes/residential-land.webp') }}" alt="Illustrative vacant residential plot" loading="lazy"><span class="tile-copy"><strong>Land & plots</strong><small>Residential, commercial and agricultural land</small></span><span class="tile-arrow">↗</span></a>{% endif %}
+      {% if 'residential' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='residential') }}"><img src="https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=900&q=78" alt="Real stock photograph of an apartment interior; not an individual property advert" loading="lazy"><span class="tile-copy"><strong>Rentals & homes</strong><small>Bedsitters, studios, apartments and family homes</small></span><span class="tile-arrow">↗</span></a>{% endif %}
+      {% if 'short_stay' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='short_stay') }}"><img src="https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&w=900&q=78" alt="Real stock photograph of an apartment building; not an individual property advert" loading="lazy"><span class="tile-copy"><strong>Airbnb, BnBs & stays</strong><small>Furnished stays, guest houses and holiday homes</small></span><span class="tile-arrow">↗</span></a>{% endif %}
+      {% if 'short_stay' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='short_stay',type='Hotel room') }}"><img src="https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=900&q=78" alt="Real stock photograph of an interior; not an individual hotel advert" loading="lazy"><span class="tile-copy"><strong>Hotels</strong><small>Rooms, suites and hospitality spaces</small></span><span class="tile-arrow">↗</span></a>{% endif %}
+      {% if 'property_sale' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='property_sale') }}"><img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=78" alt="Real stock photograph of a residential home; not an individual property advert" loading="lazy"><span class="tile-copy"><strong>Property for sale</strong><small>Houses, apartments and investment buildings</small></span><span class="tile-arrow">↗</span></a>{% endif %}
+      {% if 'land_sale' in public_categories %}<a class="landing-category-tile" href="{{ url_for('homes',category='land_sale') }}"><img src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=900&q=78" alt="Real stock landscape photograph; not an advertised plot" loading="lazy"><span class="tile-copy"><strong>Land & plots</strong><small>Residential, commercial and agricultural land</small></span><span class="tile-arrow">↗</span></a>{% endif %}
       {% if 'commercial' in public_categories %}<a class="landing-category-tile category-text-tile" href="{{ url_for('homes',category='commercial') }}"><span class="category-tile-monogram">B</span><span class="tile-copy"><strong>Shops & offices</strong><small>Retail shops, stalls, offices and business premises</small></span><span class="tile-arrow">↗</span></a>{% endif %}
       {% if 'industrial' in public_categories %}<a class="landing-category-tile category-text-tile" href="{{ url_for('homes',category='industrial') }}"><span class="category-tile-monogram">W</span><span class="tile-copy"><strong>Warehouses & yards</strong><small>Godowns, storage and logistics facilities</small></span><span class="tile-arrow">↗</span></a>{% endif %}
     </div>
-    <p class="image-disclaimer">Property scenes on this home page are generated illustrative photography. Actual properties appear only after a landlord or authorised agent submits them and the listing passes review.</p>
+    <p class="image-disclaimer">These are real stock photographs used for visual browsing only; they are not individual properties for rent or sale. Advertised homes must be submitted by a landlord or authorised agent and pass review.</p>
   </section>
 
   <section class="landing-counties-section">

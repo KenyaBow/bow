@@ -2554,6 +2554,23 @@ def service_worker():
     return response
 
 
+@app.route("/site-qr.png")
+def site_qr():
+    """Return a scannable QR code for the configured public website URL."""
+    from io import BytesIO
+    target = public_base().rstrip("/") + "/"
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=4)
+    qr.add_data(target)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#102641", back_color="#ffffff").convert("RGB")
+    output = BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    output.seek(0)
+    response = send_file(output, mimetype="image/png", max_age=3600, download_name="patamahali-website-qr.png")
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
+
+
 @app.route("/icon.svg")
 def icon_svg():
     return send_from_directory(BASE_DIR / "static" / "img", "icon.svg", mimetype="image/svg+xml")
